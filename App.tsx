@@ -12,8 +12,6 @@ import {
 import { DesignItem, CostTier, QuantityDiscount, CalculationResult } from './types';
 import { packDesigns } from './utils/layout';
 
-// Icons
-// Fixed: Added IconProps interface and updated components to accept props to resolve className errors
 interface IconProps {
   className?: string;
   size?: number;
@@ -28,29 +26,24 @@ const Tag = ({ className, size = 18 }: IconProps) => <TagIcon size={size} classN
 const Layers = ({ className, size = 18 }: IconProps) => <LayersIcon size={size} className={className} />;
 const Spacing = ({ className, size = 18 }: IconProps) => <MaximizeIcon size={size} className={className} />;
 
-// Softer, High-Contrast Colors for previews
 const DESIGN_COLORS = [
   { bg: 'bg-indigo-500', text: 'text-white', border: 'border-indigo-600' },
   { bg: 'bg-rose-500', text: 'text-white', border: 'border-rose-600' },
   { bg: 'bg-emerald-500', text: 'text-white', border: 'border-emerald-600' },
   { bg: 'bg-amber-400', text: 'text-amber-950', border: 'border-amber-500' },
   { bg: 'bg-violet-500', text: 'text-white', border: 'border-violet-600' },
-  { bg: 'bg-sky-500', text: 'text-white', border: 'border-sky-600' },
-  { bg: 'bg-fuchsia-500', text: 'text-white', border: 'border-fuchsia-600' },
-  { bg: 'bg-teal-500', text: 'text-white', border: 'border-teal-600' },
 ];
 
 const App: React.FC = () => {
-  // State with updated default values
   const [sheetWidth, setSheetWidth] = useState<number>(58);
   const [profitMargin, setProfitMargin] = useState<number>(100);
-  const [designSpacing, setDesignSpacing] = useState<number>(0.9);
+  const [designSpacing, setDesignSpacing] = useState<number>(0.2);
   
-  // Default values: 0-20 $400, 20-50 $300, 50-9999 $250
   const [costTiers, setCostTiers] = useState<CostTier[]>([
-    { id: '1', minLargo: 0, maxLargo: 20, precioPorCm: 400 },
-    { id: '2', minLargo: 20, maxLargo: 50, precioPorCm: 300 },
-    { id: '3', minLargo: 50, maxLargo: 9999, precioPorCm: 250 },
+    { id: '1', minLargo: 0, maxLargo: 20, precioPorCm: 10000 },
+    { id: '2', minLargo: 20, maxLargo: 50, precioPorCm: 8000 },
+    { id: '3', minLargo: 50, maxLargo: 100, precioPorCm: 6000 },
+    { id: '4', minLargo: 100, maxLargo: 9999, precioPorCm: 3000 },
   ]);
 
   const [quantityDiscounts, setQuantityDiscounts] = useState<QuantityDiscount[]>([
@@ -68,7 +61,6 @@ const App: React.FC = () => {
 
   const PREVIEW_SCALE = 6;
 
-  // Packing logic
   const packingResult = useMemo(() => {
     return packDesigns(designs, sheetWidth, designSpacing);
   }, [designs, sheetWidth, designSpacing]);
@@ -76,7 +68,8 @@ const App: React.FC = () => {
   const currentPricePerCm = useMemo(() => {
     const totalL = packingResult.totalLength;
     const tier = costTiers.find(t => totalL >= t.minLargo && totalL < t.maxLargo);
-    return tier ? tier.precioPorCm : 0;
+    // Nota: El sistema asume que el precio de la escala es POR CM lineal según tu lógica de cálculo.
+    return tier ? tier.precioPorCm : (costTiers[costTiers.length - 1]?.precioPorCm || 0);
   }, [packingResult.totalLength, costTiers]);
 
   const getDiscountForQty = useCallback((qty: number) => {
@@ -89,9 +82,9 @@ const App: React.FC = () => {
 
     const totalSheetCost = packingResult.totalLength * currentPricePerCm;
     const totalDesignArea = designs.reduce((acc, d) => acc + (d.width * d.height * d.quantity), 0);
-    const itemAreaOne = item.width * item.height;
-    const itemAreaTotal = itemAreaOne * item.quantity;
+    const itemAreaTotal = (item.width * item.height) * item.quantity;
     
+    // Costo de producción (repartido proporcionalmente por área)
     const totalProdCostForItem = totalDesignArea > 0 ? (itemAreaTotal / totalDesignArea) * totalSheetCost : 0;
     const unitProdCost = item.quantity > 0 ? totalProdCostForItem / item.quantity : 0;
 
@@ -137,7 +130,7 @@ const App: React.FC = () => {
               <h1 className="text-xl font-bold tracking-tight text-slate-900 leading-none mb-1">
                 Grafica<span className="text-indigo-600">Pro</span>
               </h1>
-              <span className="text-[10px] font-medium text-slate-400 tracking-wider uppercase">Optimización de Pliegos</span>
+              <span className="text-[10px] font-medium text-slate-400 tracking-wider uppercase">Cálculo de Pliegos</span>
             </div>
           </div>
           
@@ -156,11 +149,8 @@ const App: React.FC = () => {
 
       <main className="max-w-7xl mx-auto px-4 md:px-6 pt-10 grid grid-cols-1 lg:grid-cols-12 gap-8">
         
-        {/* CONFIG COLUMN */}
         <div className="lg:col-span-4 space-y-8">
-          
-          {/* ADJUSTMENTS SECTION */}
-          <section className="bg-white rounded-3xl p-7 shadow-sm border border-slate-200/60 transition-all hover:shadow-md">
+          <section className="bg-white rounded-3xl p-7 shadow-sm border border-slate-200/60">
             <div className="flex items-center gap-2 mb-6 text-slate-800 font-semibold text-sm">
               <Settings className="text-slate-400" />
               <h2>Configuración Base</h2>
@@ -169,22 +159,21 @@ const App: React.FC = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider ml-1">Ancho Pliego (cm)</label>
-                  <input type="number" value={sheetWidth} onChange={e => setSheetWidth(Number(e.target.value))} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-50/50 outline-none transition font-medium text-slate-900" />
+                  <input type="number" value={sheetWidth} onChange={e => setSheetWidth(Number(e.target.value))} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 focus:border-indigo-500 outline-none transition font-medium text-slate-900" />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider ml-1">Margen %</label>
-                  <input type="number" value={profitMargin} onChange={e => setProfitMargin(Number(e.target.value))} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-50/50 outline-none transition font-medium text-slate-900" />
+                  <input type="number" value={profitMargin} onChange={e => setProfitMargin(Number(e.target.value))} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 focus:border-indigo-500 outline-none transition font-medium text-slate-900" />
                 </div>
               </div>
               <div className="space-y-1.5">
-                <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider ml-1 flex items-center gap-2"><Spacing className="text-slate-300" /> Separación (cm)</label>
-                <input type="number" step="0.1" value={designSpacing} onChange={e => setDesignSpacing(Number(e.target.value))} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-50/50 outline-none transition font-medium text-slate-900" />
+                <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider ml-1 flex items-center gap-2"><Spacing className="text-slate-300" /> Separación entre diseños (cm)</label>
+                <input type="number" step="0.1" value={designSpacing} onChange={e => setDesignSpacing(Number(e.target.value))} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 focus:border-indigo-500 outline-none transition font-medium text-slate-900" />
               </div>
             </div>
           </section>
 
-          {/* NEW ITEM SECTION */}
-          <section className="bg-white rounded-3xl p-7 shadow-sm border border-slate-200/60 transition-all hover:shadow-md">
+          <section className="bg-white rounded-3xl p-7 shadow-sm border border-slate-200/60">
             <div className="flex items-center gap-2 mb-6 text-indigo-600 font-semibold text-sm">
               <Plus />
               <h2>Añadir Diseño</h2>
@@ -192,7 +181,7 @@ const App: React.FC = () => {
             <div className="space-y-5">
               <div className="space-y-1.5">
                 <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider ml-1">Nombre</label>
-                <input type="text" placeholder="Ej: Flyer Promocional" value={newDesign.name} onChange={e => setNewDesign({...newDesign, name: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 focus:border-indigo-500 outline-none transition font-medium text-slate-900" />
+                <input type="text" placeholder="Ej: Sticker Logo" value={newDesign.name} onChange={e => setNewDesign({...newDesign, name: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 focus:border-indigo-500 outline-none transition font-medium text-slate-900" />
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <div className="text-center space-y-1.5">
@@ -208,25 +197,24 @@ const App: React.FC = () => {
                   <input type="number" value={newDesign.quantity || ''} onChange={e => setNewDesign({...newDesign, quantity: Number(e.target.value)})} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 focus:border-indigo-500 outline-none transition font-medium text-center text-slate-900" />
                 </div>
               </div>
-              <button onClick={addDesign} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-4 rounded-2xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-100 active:scale-[0.98]">
+              <button onClick={addDesign} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-4 rounded-2xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-100">
                 <Plus /> Agregar Diseño
               </button>
             </div>
           </section>
 
-          {/* COST SCALE SECTION */}
-          <section className="bg-white rounded-3xl p-7 shadow-sm border border-slate-200/60 transition-all hover:shadow-md">
+          <section className="bg-white rounded-3xl p-7 shadow-sm border border-slate-200/60">
              <div className="flex items-center justify-between mb-6">
-               <h2 className="text-slate-800 font-semibold text-sm flex items-center gap-2"><Tag className="text-slate-400" /> Escala de Costos</h2>
+               <h2 className="text-slate-800 font-semibold text-sm flex items-center gap-2"><Tag className="text-slate-400" /> Escala de Costos (Largo)</h2>
                <button onClick={() => setCostTiers([...costTiers, { id: Date.now().toString(), minLargo: 0, maxLargo: 0, precioPorCm: 0 }])} className="text-indigo-600 hover:bg-indigo-50 p-1.5 rounded-full transition"><Plus /></button>
              </div>
              <div className="space-y-2.5">
                {costTiers.map((tier, idx) => (
                  <div key={tier.id} className="flex gap-2 items-center bg-slate-50/50 p-2 rounded-xl border border-slate-100 overflow-hidden">
                    <div className="flex items-center gap-1.5">
-                     <input type="number" className="w-14 bg-white border border-slate-200 rounded-lg p-2 text-[11px] font-medium text-center text-slate-700" value={tier.minLargo} onChange={e => { const nt = [...costTiers]; nt[idx].minLargo = Number(e.target.value); setCostTiers(nt); }} />
+                     <input type="number" className="w-14 bg-white border border-slate-200 rounded-lg p-2 text-[11px] font-medium text-center" value={tier.minLargo} onChange={e => { const nt = [...costTiers]; nt[idx].minLargo = Number(e.target.value); setCostTiers(nt); }} />
                      <span className="text-slate-300 text-[10px] font-bold">→</span>
-                     <input type="number" className="w-14 bg-white border border-slate-200 rounded-lg p-2 text-[11px] font-medium text-center text-slate-700" value={tier.maxLargo} onChange={e => { const nt = [...costTiers]; nt[idx].maxLargo = Number(e.target.value); setCostTiers(nt); }} />
+                     <input type="number" className="w-14 bg-white border border-slate-200 rounded-lg p-2 text-[11px] font-medium text-center" value={tier.maxLargo} onChange={e => { const nt = [...costTiers]; nt[idx].maxLargo = Number(e.target.value); setCostTiers(nt); }} />
                    </div>
                    <input type="number" className="flex-1 bg-white border border-slate-200 rounded-lg p-2 text-[11px] font-bold text-indigo-600 text-right" value={tier.precioPorCm} onChange={e => { const nt = [...costTiers]; nt[idx].precioPorCm = Number(e.target.value); setCostTiers(nt); }} />
                    <button onClick={() => setCostTiers(costTiers.filter(t => t.id !== tier.id))} className="text-slate-300 hover:text-rose-500 transition-colors p-1"><Trash /></button>
@@ -235,19 +223,18 @@ const App: React.FC = () => {
              </div>
           </section>
 
-          {/* QUANTITY DISCOUNTS SECTION */}
-          <section className="bg-white rounded-3xl p-7 shadow-sm border border-slate-200/60 transition-all hover:shadow-md">
+          <section className="bg-white rounded-3xl p-7 shadow-sm border border-slate-200/60">
              <div className="flex items-center justify-between mb-6">
-               <h2 className="text-slate-800 font-semibold text-sm flex items-center gap-2"><Layers className="text-slate-400" /> Descuentos por Cantidad</h2>
+               <h2 className="text-slate-800 font-semibold text-sm flex items-center gap-2"><Layers className="text-slate-400" /> Descuentos x Cantidad</h2>
                <button onClick={() => setQuantityDiscounts([...quantityDiscounts, { id: Date.now().toString(), minQty: 0, maxQty: 0, discountPercent: 0 }])} className="text-emerald-600 hover:bg-emerald-50 p-1.5 rounded-full transition"><Plus /></button>
              </div>
              <div className="space-y-2.5">
                {quantityDiscounts.map((discount, idx) => (
-                 <div key={discount.id} className="flex gap-2 items-center bg-slate-50/50 p-2 rounded-xl border border-slate-100 overflow-hidden">
+                 <div key={discount.id} className="flex gap-2 items-center bg-slate-50/50 p-2 rounded-xl border border-slate-100">
                    <div className="flex items-center gap-1.5">
-                     <input type="number" className="w-14 bg-white border border-slate-200 rounded-lg p-2 text-[11px] font-medium text-center text-slate-700" value={discount.minQty} onChange={e => { const nd = [...quantityDiscounts]; nd[idx].minQty = Number(e.target.value); setQuantityDiscounts(nd); }} />
+                     <input type="number" className="w-14 bg-white border border-slate-200 rounded-lg p-2 text-[11px] font-medium text-center" value={discount.minQty} onChange={e => { const nd = [...quantityDiscounts]; nd[idx].minQty = Number(e.target.value); setQuantityDiscounts(nd); }} />
                      <span className="text-slate-300 text-[10px] font-bold">→</span>
-                     <input type="number" className="w-14 bg-white border border-slate-200 rounded-lg p-2 text-[11px] font-medium text-center text-slate-700" value={discount.maxQty} onChange={e => { const nd = [...quantityDiscounts]; nd[idx].maxQty = Number(e.target.value); setQuantityDiscounts(nd); }} />
+                     <input type="number" className="w-14 bg-white border border-slate-200 rounded-lg p-2 text-[11px] font-medium text-center" value={discount.maxQty} onChange={e => { const nd = [...quantityDiscounts]; nd[idx].maxQty = Number(e.target.value); setQuantityDiscounts(nd); }} />
                    </div>
                    <div className="flex-1 relative">
                      <input type="number" className="w-full bg-white border border-slate-200 rounded-lg p-2 pr-5 text-[11px] font-bold text-emerald-600 text-right" value={discount.discountPercent} onChange={e => { const nd = [...quantityDiscounts]; nd[idx].discountPercent = Number(e.target.value); setQuantityDiscounts(nd); }} />
@@ -260,40 +247,31 @@ const App: React.FC = () => {
           </section>
         </div>
 
-        {/* VISUALIZER COLUMN */}
         <div className="lg:col-span-8 space-y-10">
-          
           <section className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-slate-200/60 overflow-hidden relative">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
-              <div className="flex items-center gap-4">
-                <div className="bg-slate-50 p-2.5 rounded-xl text-slate-600 border border-slate-100">
-                  <Layout />
-                </div>
-                <h2 className="font-bold text-lg text-slate-900 tracking-tight">Previsualización del Pliego</h2>
+            <div className="flex items-center gap-4 mb-8">
+              <div className="bg-slate-50 p-2.5 rounded-xl text-slate-600 border border-slate-100">
+                <Layout />
               </div>
-              <div className="bg-indigo-50/60 text-indigo-600 px-4 py-1.5 rounded-full border border-indigo-100 text-[10px] font-bold tracking-wide uppercase">
-                Optimización Dinámica Activa
-              </div>
+              <h2 className="font-bold text-lg text-slate-900 tracking-tight">Previsualización del Pliego</h2>
             </div>
             
-            <div className="relative bg-slate-900 rounded-3xl min-h-[550px] overflow-auto flex justify-center p-14 custom-scrollbar shadow-inner border-[6px] border-slate-800">
+            <div className="relative bg-slate-900 rounded-3xl min-h-[500px] overflow-auto flex justify-center p-14 custom-scrollbar shadow-inner border-[6px] border-slate-800">
               {packingResult.totalLength > 0 ? (
                 <div 
                   className="bg-white shadow-2xl relative border border-white/20 origin-top"
                   style={{
                     width: `${sheetWidth * PREVIEW_SCALE}px`,
                     height: `${packingResult.totalLength * PREVIEW_SCALE}px`,
-                    transition: 'all 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)'
+                    transition: 'all 0.6s'
                   }}
                 >
-                  <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: `linear-gradient(#000 2px, transparent 2px), linear-gradient(90deg, #000 2px, transparent 2px)`, backgroundSize: `${PREVIEW_SCALE * 5}px ${PREVIEW_SCALE * 5}px` }}></div>
-                  
                   {packingResult.packed.map((p: any) => {
                     const color = getColorForDesign(p.originalId);
                     return (
                       <div
                         key={p.id}
-                        className={`absolute border ${color.bg} ${color.border} ${color.text} flex flex-col items-center justify-center text-[10px] font-bold overflow-hidden shadow-sm transition-transform z-10`}
+                        className={`absolute border ${color.bg} ${color.border} ${color.text} flex items-center justify-center text-[8px] font-bold overflow-hidden shadow-sm`}
                         style={{
                           left: `${p.x * PREVIEW_SCALE}px`,
                           top: `${p.y * PREVIEW_SCALE}px`,
@@ -301,37 +279,30 @@ const App: React.FC = () => {
                           height: `${p.height * PREVIEW_SCALE}px`
                         }}
                       >
-                        <span className="opacity-80">{p.width}x{p.height}</span>
+                        {p.width}x{p.height}
                       </div>
                     );
                   })}
-                  
-                  {/* Ruler indicators */}
-                  <div className="absolute -left-16 top-0 bottom-0 w-12 flex flex-col justify-between text-[11px] font-bold text-slate-400 py-1 uppercase tracking-tighter italic">
-                    <span className="bg-slate-800 px-1.5 py-0.5 rounded-md">0</span>
+                  <div className="absolute -left-16 top-0 bottom-0 w-12 flex flex-col justify-between text-[11px] font-bold text-slate-400 py-1 uppercase italic">
+                    <span>0</span>
                     <span className="bg-indigo-600 text-white px-1.5 py-0.5 rounded-md text-center">{packingResult.totalLength.toFixed(1)}cm</span>
-                  </div>
-                  <div className="absolute top-[-35px] left-0 right-0 h-8 flex justify-between items-center text-[11px] font-bold text-slate-400 px-2 italic">
-                    <span className="bg-slate-800 px-2 py-0.5 rounded-md">INICIO</span>
-                    <span className="bg-slate-800 px-3 py-0.5 rounded-full uppercase">Ancho: {sheetWidth}cm</span>
                   </div>
                 </div>
               ) : (
-                <div className="flex flex-col items-center justify-center text-slate-600 space-y-5 py-32 opacity-30">
-                  <LayoutIcon size={100} strokeWidth={1} />
-                  <p className="font-semibold uppercase tracking-[0.2em] text-xs">Esperando diseños para calcular...</p>
+                <div className="flex flex-col items-center justify-center text-slate-600 opacity-30 py-32">
+                  <LayoutIcon size={80} strokeWidth={1} />
+                  <p className="mt-4 font-semibold uppercase tracking-widest text-xs">Añade diseños para comenzar</p>
                 </div>
               )}
             </div>
           </section>
 
-          {/* BILLING SECTION */}
           <section className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-slate-200/60">
             <div className="flex items-center gap-4 mb-10">
               <div className="bg-emerald-50 p-2.5 rounded-xl text-emerald-600 border border-emerald-100">
                 <Calculator />
               </div>
-              <h2 className="font-bold text-lg text-slate-900 tracking-tight">Detalle de Facturación</h2>
+              <h2 className="font-bold text-lg text-slate-900 tracking-tight">Detalle de Costos y Precios</h2>
             </div>
             
             <div className="overflow-x-auto">
@@ -340,16 +311,14 @@ const App: React.FC = () => {
                   <tr className="text-slate-400">
                     <th className="pb-2 px-6 text-[10px] font-bold uppercase tracking-widest">Diseño</th>
                     <th className="pb-2 px-4 text-[10px] font-bold uppercase tracking-widest text-center">Cant.</th>
-                    <th className="pb-2 px-4 text-[10px] font-bold uppercase tracking-widest text-right">Costo Unit.</th>
-                    <th className="pb-2 px-4 text-[10px] font-bold uppercase tracking-widest text-right text-indigo-500">Precio Unit.</th>
-                    <th className="pb-2 px-6 text-[10px] font-bold uppercase tracking-widest text-right text-emerald-600">Total</th>
-                    <th className="pb-2 px-4"></th>
+                    <th className="pb-2 px-4 text-[10px] font-bold uppercase tracking-widest text-right">Costo Total (Prod)</th>
+                    <th className="pb-2 px-4 text-[10px] font-bold uppercase tracking-widest text-right text-indigo-500">Precio Total (Cliente)</th>
                   </tr>
                 </thead>
                 <tbody>
                   {designs.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="py-20 text-center text-slate-300 font-medium uppercase tracking-widest italic text-xs">No hay ítems para mostrar</td>
+                      <td colSpan={4} className="py-20 text-center text-slate-300 font-medium uppercase tracking-widest italic text-xs">No hay ítems cargados</td>
                     </tr>
                   ) : (
                     designs.map((design) => {
@@ -361,22 +330,18 @@ const App: React.FC = () => {
                             <div className="flex items-center gap-3">
                                <div className={`w-3 h-3 rounded-full ${color.bg} shadow-sm`}></div>
                                <div>
-                                 <div className="font-semibold text-slate-900 text-sm leading-none mb-1">{design.name || 'Sin nombre'}</div>
-                                 <div className="text-[10px] font-medium text-slate-400 tracking-wider">{design.width} x {design.height} CM</div>
+                                 <div className="font-semibold text-slate-900 text-sm leading-none mb-1">{design.name || 'Diseño'}</div>
+                                 <div className="text-[10px] font-medium text-slate-400 tracking-wider">{design.width}x{design.height} CM • Costo Unit: ${res.unitProductionCost.toFixed(0)}</div>
                                </div>
                             </div>
                           </td>
                           <td className="py-5 px-4 text-center font-bold text-slate-700">{design.quantity}</td>
-                          {/* Updated: Font size matches the total column (text-xl tracking-tight) */}
-                          <td className="py-5 px-4 text-right font-bold text-rose-500 text-xl tracking-tight">${res.unitProductionCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
-                          <td className="py-5 px-4 text-right font-bold text-indigo-600 text-xl tracking-tight">${res.unitClientPrice.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
-                          <td className="py-5 px-6 text-right rounded-r-2xl">
-                             <div className="font-bold text-emerald-600 text-xl tracking-tight">${res.totalClientPrice.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+                          <td className="py-5 px-4 text-right font-bold text-slate-400 text-lg">${res.totalProductionCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                          <td className="py-5 px-6 text-right rounded-r-2xl font-bold text-emerald-600 text-2xl">
+                             ${res.totalClientPrice.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                           </td>
-                          <td className="py-5 px-2 text-right">
-                            <button onClick={() => removeDesign(design.id)} className="text-slate-300 hover:text-rose-500 transition-all p-2 rounded-xl hover:bg-rose-50 active:scale-90">
-                              <Trash />
-                            </button>
+                          <td className="py-5 px-2">
+                             <button onClick={() => removeDesign(design.id)} className="text-slate-300 hover:text-rose-500 p-2"><Trash /></button>
                           </td>
                         </tr>
                       );
@@ -387,22 +352,18 @@ const App: React.FC = () => {
             </div>
 
             {designs.length > 0 && (
-              <div className="mt-12 p-10 bg-slate-900 rounded-[2.5rem] text-white shadow-xl relative overflow-hidden group">
-                <div className="absolute inset-0 bg-gradient-to-br from-indigo-900/40 to-transparent opacity-50 pointer-events-none"></div>
-                <div className="relative z-10 flex flex-col lg:flex-row justify-between items-center gap-10 text-center lg:text-left">
-                  <div className="space-y-1">
-                    <h3 className="text-slate-400 text-[10px] font-bold uppercase tracking-[0.2em]">Inversión de Material</h3>
-                    <div className="text-3xl font-light tracking-tight text-white/90">
-                      <span className="text-slate-600 text-xl mr-1.5 font-bold">$</span>
-                      {(packingResult.totalLength * currentPricePerCm).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+              <div className="mt-12 p-10 bg-slate-900 rounded-[2.5rem] text-white shadow-xl relative overflow-hidden">
+                <div className="relative z-10 flex flex-col lg:flex-row justify-between items-center gap-10">
+                  <div className="space-y-1 text-center lg:text-left">
+                    <h3 className="text-slate-400 text-[10px] font-bold uppercase tracking-[0.2em]">Costo Producción Total</h3>
+                    <div className="text-3xl font-light text-white/90">
+                      ${(packingResult.totalLength * currentPricePerCm).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                     </div>
                   </div>
-                  <div className="hidden lg:block w-px h-20 bg-slate-800"></div>
-                  <div className="lg:text-right space-y-2">
-                    <h3 className="text-emerald-400 text-[10px] font-bold uppercase tracking-[0.2em]">Presupuesto Final</h3>
-                    <div className="text-7xl font-bold text-emerald-400 tracking-tighter">
-                      <span className="text-emerald-600 text-3xl mr-1.5 font-bold">$</span>
-                      {designs.reduce((acc, d) => acc + calculateDetails(d).totalClientPrice, 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                  <div className="lg:text-right space-y-2 text-center">
+                    <h3 className="text-emerald-400 text-[10px] font-bold uppercase tracking-[0.2em]">Venta Total Recomendada</h3>
+                    <div className="text-6xl font-bold text-emerald-400 tracking-tighter">
+                      ${designs.reduce((acc, d) => acc + calculateDetails(d).totalClientPrice, 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                     </div>
                   </div>
                 </div>
@@ -413,7 +374,7 @@ const App: React.FC = () => {
       </main>
       
       <footer className="mt-20 text-center text-slate-300 text-[10px] py-12 font-semibold uppercase tracking-[0.5em] border-t border-slate-200">
-        GraficaPro Systems &bull; Precise Scaling &bull; &copy; {new Date().getFullYear()}
+        GraficaPro &bull; &copy; {new Date().getFullYear()}
       </footer>
     </div>
   );
