@@ -48,7 +48,6 @@ const App: React.FC = () => {
 
   const [quantityDiscounts, setQuantityDiscounts] = useState<QuantityDiscount[]>([
     { id: '1', minQty: 10, maxQty: 25, discountPercent: 20 },
-    { id: '2', minQty: 26, maxQty: 100, discountPercent: 30 },
   ]);
 
   const [designs, setDesigns] = useState<DesignItem[]>([]);
@@ -68,7 +67,6 @@ const App: React.FC = () => {
   const currentPricePerCm = useMemo(() => {
     const totalL = packingResult.totalLength;
     const tier = costTiers.find(t => totalL >= t.minLargo && totalL < t.maxLargo);
-    // Nota: El sistema asume que el precio de la escala es POR CM lineal según tu lógica de cálculo.
     return tier ? tier.precioPorCm : (costTiers[costTiers.length - 1]?.precioPorCm || 0);
   }, [packingResult.totalLength, costTiers]);
 
@@ -81,10 +79,12 @@ const App: React.FC = () => {
     if (packingResult.totalLength <= 0) return { unitProductionCost: 0, unitClientPrice: 0, totalProductionCost: 0, totalClientPrice: 0 };
 
     const totalSheetCost = packingResult.totalLength * currentPricePerCm;
+    
+    // Calculamos el área total ocupada por todos los diseños para prorratear el costo
     const totalDesignArea = designs.reduce((acc, d) => acc + (d.width * d.height * d.quantity), 0);
     const itemAreaTotal = (item.width * item.height) * item.quantity;
     
-    // Costo de producción (repartido proporcionalmente por área)
+    // Costo de producción prorrateado por área
     const totalProdCostForItem = totalDesignArea > 0 ? (itemAreaTotal / totalDesignArea) * totalSheetCost : 0;
     const unitProdCost = item.quantity > 0 ? totalProdCostForItem / item.quantity : 0;
 
@@ -120,7 +120,7 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 pb-20 font-sans text-slate-700">
-      <header className="bg-white/80 backdrop-blur-md border-b border-slate-200 p-6 sticky top-0 z-50 transition-all duration-300">
+      <header className="bg-white/80 backdrop-blur-md border-b border-slate-200 p-6 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="flex items-center gap-4">
             <div className="bg-indigo-600 p-2.5 rounded-xl text-white shadow-indigo-100 shadow-lg">
@@ -130,7 +130,7 @@ const App: React.FC = () => {
               <h1 className="text-xl font-bold tracking-tight text-slate-900 leading-none mb-1">
                 Grafica<span className="text-indigo-600">Pro</span>
               </h1>
-              <span className="text-[10px] font-medium text-slate-400 tracking-wider uppercase">Cálculo de Pliegos</span>
+              <span className="text-[10px] font-medium text-slate-400 tracking-wider uppercase">Optimización de Pliegos</span>
             </div>
           </div>
           
@@ -149,6 +149,7 @@ const App: React.FC = () => {
 
       <main className="max-w-7xl mx-auto px-4 md:px-6 pt-10 grid grid-cols-1 lg:grid-cols-12 gap-8">
         
+        {/* Sidebar de Configuración */}
         <div className="lg:col-span-4 space-y-8">
           <section className="bg-white rounded-3xl p-7 shadow-sm border border-slate-200/60">
             <div className="flex items-center gap-2 mb-6 text-slate-800 font-semibold text-sm">
@@ -181,7 +182,7 @@ const App: React.FC = () => {
             <div className="space-y-5">
               <div className="space-y-1.5">
                 <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider ml-1">Nombre</label>
-                <input type="text" placeholder="Ej: Sticker Logo" value={newDesign.name} onChange={e => setNewDesign({...newDesign, name: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 focus:border-indigo-500 outline-none transition font-medium text-slate-900" />
+                <input type="text" placeholder="Ej: Flyer Evento" value={newDesign.name} onChange={e => setNewDesign({...newDesign, name: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 focus:border-indigo-500 outline-none transition font-medium text-slate-900" />
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <div className="text-center space-y-1.5">
@@ -203,6 +204,7 @@ const App: React.FC = () => {
             </div>
           </section>
 
+          {/* Configuración de Escalas */}
           <section className="bg-white rounded-3xl p-7 shadow-sm border border-slate-200/60">
              <div className="flex items-center justify-between mb-6">
                <h2 className="text-slate-800 font-semibold text-sm flex items-center gap-2"><Tag className="text-slate-400" /> Escala de Costos (Largo)</h2>
@@ -210,7 +212,7 @@ const App: React.FC = () => {
              </div>
              <div className="space-y-2.5">
                {costTiers.map((tier, idx) => (
-                 <div key={tier.id} className="flex gap-2 items-center bg-slate-50/50 p-2 rounded-xl border border-slate-100 overflow-hidden">
+                 <div key={tier.id} className="flex gap-2 items-center bg-slate-50/50 p-2 rounded-xl border border-slate-100">
                    <div className="flex items-center gap-1.5">
                      <input type="number" className="w-14 bg-white border border-slate-200 rounded-lg p-2 text-[11px] font-medium text-center" value={tier.minLargo} onChange={e => { const nt = [...costTiers]; nt[idx].minLargo = Number(e.target.value); setCostTiers(nt); }} />
                      <span className="text-slate-300 text-[10px] font-bold">→</span>
@@ -223,6 +225,7 @@ const App: React.FC = () => {
              </div>
           </section>
 
+          {/* Descuentos por Cantidad */}
           <section className="bg-white rounded-3xl p-7 shadow-sm border border-slate-200/60">
              <div className="flex items-center justify-between mb-6">
                <h2 className="text-slate-800 font-semibold text-sm flex items-center gap-2"><Layers className="text-slate-400" /> Descuentos x Cantidad</h2>
@@ -247,6 +250,7 @@ const App: React.FC = () => {
           </section>
         </div>
 
+        {/* Visualización y Resultados */}
         <div className="lg:col-span-8 space-y-10">
           <section className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-slate-200/60 overflow-hidden relative">
             <div className="flex items-center gap-4 mb-8">
@@ -283,10 +287,6 @@ const App: React.FC = () => {
                       </div>
                     );
                   })}
-                  <div className="absolute -left-16 top-0 bottom-0 w-12 flex flex-col justify-between text-[11px] font-bold text-slate-400 py-1 uppercase italic">
-                    <span>0</span>
-                    <span className="bg-indigo-600 text-white px-1.5 py-0.5 rounded-md text-center">{packingResult.totalLength.toFixed(1)}cm</span>
-                  </div>
                 </div>
               ) : (
                 <div className="flex flex-col items-center justify-center text-slate-600 opacity-30 py-32">
@@ -306,42 +306,44 @@ const App: React.FC = () => {
             </div>
             
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-separate border-spacing-y-3">
+              <table className="w-full text-left border-separate border-spacing-y-4">
                 <thead>
                   <tr className="text-slate-400">
-                    <th className="pb-2 px-6 text-[10px] font-bold uppercase tracking-widest">Diseño</th>
-                    <th className="pb-2 px-4 text-[10px] font-bold uppercase tracking-widest text-center">Cant.</th>
+                    <th className="pb-2 px-6 text-[10px] font-bold uppercase tracking-widest">Diseño / Cant</th>
+                    <th className="pb-2 px-4 text-[10px] font-bold uppercase tracking-widest text-right">Costo Unidad (Prod)</th>
+                    <th className="pb-2 px-4 text-[10px] font-bold uppercase tracking-widest text-right">Precio Cliente Un.</th>
                     <th className="pb-2 px-4 text-[10px] font-bold uppercase tracking-widest text-right">Costo Total (Prod)</th>
-                    <th className="pb-2 px-4 text-[10px] font-bold uppercase tracking-widest text-right text-indigo-500">Precio Total (Cliente)</th>
+                    <th className="pb-2 px-6 text-[10px] font-bold uppercase tracking-widest text-right text-indigo-500">Precio Total (Cliente)</th>
                   </tr>
                 </thead>
                 <tbody>
                   {designs.length === 0 ? (
                     <tr>
-                      <td colSpan={4} className="py-20 text-center text-slate-300 font-medium uppercase tracking-widest italic text-xs">No hay ítems cargados</td>
+                      <td colSpan={5} className="py-20 text-center text-slate-300 font-medium uppercase tracking-widest italic text-xs">No hay ítems cargados</td>
                     </tr>
                   ) : (
                     designs.map((design) => {
                       const res = calculateDetails(design);
                       const color = getColorForDesign(design.id);
                       return (
-                        <tr key={design.id} className="bg-slate-50/50 hover:bg-slate-100/50 transition-colors duration-300 rounded-2xl group border border-slate-100">
-                          <td className="py-5 px-6 rounded-l-2xl">
+                        <tr key={design.id} className="bg-slate-50/50 hover:bg-slate-100/50 transition-colors duration-300 rounded-2xl group">
+                          <td className="py-5 px-6 rounded-l-2xl border-y border-l border-transparent group-hover:border-slate-200">
                             <div className="flex items-center gap-3">
                                <div className={`w-3 h-3 rounded-full ${color.bg} shadow-sm`}></div>
                                <div>
-                                 <div className="font-semibold text-slate-900 text-sm leading-none mb-1">{design.name || 'Diseño'}</div>
-                                 <div className="text-[10px] font-medium text-slate-400 tracking-wider">{design.width}x{design.height} CM • Costo Unit: ${res.unitProductionCost.toFixed(0)}</div>
+                                 <div className="font-semibold text-slate-900 text-sm leading-none mb-1">{design.name || 'Sin nombre'}</div>
+                                 <div className="text-[10px] font-medium text-slate-400 tracking-wider uppercase">{design.width}x{design.height} CM • CANT: {design.quantity}</div>
                                </div>
                             </div>
                           </td>
-                          <td className="py-5 px-4 text-center font-bold text-slate-700">{design.quantity}</td>
-                          <td className="py-5 px-4 text-right font-bold text-slate-400 text-lg">${res.totalProductionCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
-                          <td className="py-5 px-6 text-right rounded-r-2xl font-bold text-emerald-600 text-2xl">
+                          <td className="py-5 px-4 text-right font-medium text-slate-600">${res.unitProductionCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                          <td className="py-5 px-4 text-right font-medium text-slate-900">${res.unitClientPrice.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                          <td className="py-5 px-4 text-right font-bold text-slate-400">${res.totalProductionCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                          <td className="py-5 px-6 text-right font-bold text-emerald-600 text-xl border-y border-r border-transparent group-hover:border-slate-200">
                              ${res.totalClientPrice.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                           </td>
                           <td className="py-5 px-2">
-                             <button onClick={() => removeDesign(design.id)} className="text-slate-300 hover:text-rose-500 p-2"><Trash /></button>
+                             <button onClick={() => removeDesign(design.id)} className="text-slate-300 hover:text-rose-500 p-2 transition-colors"><Trash /></button>
                           </td>
                         </tr>
                       );
@@ -355,13 +357,13 @@ const App: React.FC = () => {
               <div className="mt-12 p-10 bg-slate-900 rounded-[2.5rem] text-white shadow-xl relative overflow-hidden">
                 <div className="relative z-10 flex flex-col lg:flex-row justify-between items-center gap-10">
                   <div className="space-y-1 text-center lg:text-left">
-                    <h3 className="text-slate-400 text-[10px] font-bold uppercase tracking-[0.2em]">Costo Producción Total</h3>
+                    <h3 className="text-slate-400 text-[10px] font-bold uppercase tracking-[0.2em]">Costo Producción Total Pliego</h3>
                     <div className="text-3xl font-light text-white/90">
                       ${(packingResult.totalLength * currentPricePerCm).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                     </div>
                   </div>
                   <div className="lg:text-right space-y-2 text-center">
-                    <h3 className="text-emerald-400 text-[10px] font-bold uppercase tracking-[0.2em]">Venta Total Recomendada</h3>
+                    <h3 className="text-emerald-400 text-[10px] font-bold uppercase tracking-[0.2em]">Precio Venta Total</h3>
                     <div className="text-6xl font-bold text-emerald-400 tracking-tighter">
                       ${designs.reduce((acc, d) => acc + calculateDetails(d).totalClientPrice, 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                     </div>
