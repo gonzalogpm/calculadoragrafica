@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { 
   PlusIcon, 
   TrashIcon, 
@@ -34,29 +34,70 @@ const DESIGN_COLORS = [
   { bg: 'bg-violet-500', text: 'text-white', border: 'border-violet-600' },
 ];
 
+const STORAGE_KEYS = {
+  SHEET_WIDTH: 'graficapro_sheet_width',
+  PROFIT_MARGIN: 'graficapro_profit_margin',
+  DESIGN_SPACING: 'graficapro_design_spacing',
+  COST_TIERS: 'graficapro_cost_tiers',
+  QUANTITY_DISCOUNTS: 'graficapro_quantity_discounts',
+  DESIGNS: 'graficapro_designs',
+};
+
 const App: React.FC = () => {
-  const [sheetWidth, setSheetWidth] = useState<number>(58);
-  const [profitMargin, setProfitMargin] = useState<number>(100);
-  const [designSpacing, setDesignSpacing] = useState<number>(0.2);
+  // Inicialización de estados desde localStorage o valores por defecto
+  const [sheetWidth, setSheetWidth] = useState<number>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.SHEET_WIDTH);
+    return saved ? Number(saved) : 58;
+  });
   
-  const [costTiers, setCostTiers] = useState<CostTier[]>([
-    { id: '1', minLargo: 0, maxLargo: 20, precioPorCm: 10000 },
-    { id: '2', minLargo: 20, maxLargo: 50, precioPorCm: 8000 },
-    { id: '3', minLargo: 50, maxLargo: 100, precioPorCm: 6000 },
-    { id: '4', minLargo: 100, maxLargo: 9999, precioPorCm: 3000 },
-  ]);
+  const [profitMargin, setProfitMargin] = useState<number>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.PROFIT_MARGIN);
+    return saved ? Number(saved) : 100;
+  });
 
-  const [quantityDiscounts, setQuantityDiscounts] = useState<QuantityDiscount[]>([
-    { id: '1', minQty: 10, maxQty: 25, discountPercent: 20 },
-  ]);
+  const [designSpacing, setDesignSpacing] = useState<number>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.DESIGN_SPACING);
+    return saved ? Number(saved) : 0.2;
+  });
+  
+  const [costTiers, setCostTiers] = useState<CostTier[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.COST_TIERS);
+    return saved ? JSON.parse(saved) : [
+      { id: '1', minLargo: 0, maxLargo: 20, precioPorCm: 10000 },
+      { id: '2', minLargo: 20, maxLargo: 50, precioPorCm: 8000 },
+      { id: '3', minLargo: 50, maxLargo: 100, precioPorCm: 6000 },
+      { id: '4', minLargo: 100, maxLargo: 9999, precioPorCm: 3000 },
+    ];
+  });
 
-  const [designs, setDesigns] = useState<DesignItem[]>([]);
+  const [quantityDiscounts, setQuantityDiscounts] = useState<QuantityDiscount[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.QUANTITY_DISCOUNTS);
+    return saved ? JSON.parse(saved) : [
+      { id: '1', minQty: 10, maxQty: 25, discountPercent: 20 },
+    ];
+  });
+
+  const [designs, setDesigns] = useState<DesignItem[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.DESIGNS);
+    return saved ? JSON.parse(saved) : [];
+  });
+
   const [newDesign, setNewDesign] = useState<Omit<DesignItem, 'id'>>({
     name: '',
     width: 0,
     height: 0,
     quantity: 1
   });
+
+  // Guardar cambios en localStorage automáticamente
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.SHEET_WIDTH, sheetWidth.toString());
+    localStorage.setItem(STORAGE_KEYS.PROFIT_MARGIN, profitMargin.toString());
+    localStorage.setItem(STORAGE_KEYS.DESIGN_SPACING, designSpacing.toString());
+    localStorage.setItem(STORAGE_KEYS.COST_TIERS, JSON.stringify(costTiers));
+    localStorage.setItem(STORAGE_KEYS.QUANTITY_DISCOUNTS, JSON.stringify(quantityDiscounts));
+    localStorage.setItem(STORAGE_KEYS.DESIGNS, JSON.stringify(designs));
+  }, [sheetWidth, profitMargin, designSpacing, costTiers, quantityDiscounts, designs]);
 
   const PREVIEW_SCALE = 6;
 
@@ -79,12 +120,8 @@ const App: React.FC = () => {
     if (packingResult.totalLength <= 0) return { unitProductionCost: 0, unitClientPrice: 0, totalProductionCost: 0, totalClientPrice: 0 };
 
     const totalSheetCost = packingResult.totalLength * currentPricePerCm;
-    
-    // Calculamos el área total ocupada por todos los diseños para prorratear el costo
     const totalDesignArea = designs.reduce((acc, d) => acc + (d.width * d.height * d.quantity), 0);
     const itemAreaTotal = (item.width * item.height) * item.quantity;
-    
-    // Costo de producción prorrateado por área
     const totalProdCostForItem = totalDesignArea > 0 ? (itemAreaTotal / totalDesignArea) * totalSheetCost : 0;
     const unitProdCost = item.quantity > 0 ? totalProdCostForItem / item.quantity : 0;
 
@@ -116,6 +153,12 @@ const App: React.FC = () => {
 
   const removeDesign = (id: string) => {
     setDesigns(designs.filter(d => d.id !== id));
+  };
+
+  const clearAll = () => {
+    if(confirm('¿Estás seguro de que quieres borrar todos los diseños?')) {
+      setDesigns([]);
+    }
   };
 
   return (
@@ -253,11 +296,18 @@ const App: React.FC = () => {
         {/* Visualización y Resultados */}
         <div className="lg:col-span-8 space-y-10">
           <section className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-slate-200/60 overflow-hidden relative">
-            <div className="flex items-center gap-4 mb-8">
-              <div className="bg-slate-50 p-2.5 rounded-xl text-slate-600 border border-slate-100">
-                <Layout />
+            <div className="flex items-center justify-between mb-8">
+              <div className="flex items-center gap-4">
+                <div className="bg-slate-50 p-2.5 rounded-xl text-slate-600 border border-slate-100">
+                  <Layout />
+                </div>
+                <h2 className="font-bold text-lg text-slate-900 tracking-tight">Previsualización del Pliego</h2>
               </div>
-              <h2 className="font-bold text-lg text-slate-900 tracking-tight">Previsualización del Pliego</h2>
+              {designs.length > 0 && (
+                <button onClick={clearAll} className="text-rose-500 hover:bg-rose-50 px-4 py-2 rounded-xl text-xs font-bold transition-colors flex items-center gap-2 border border-rose-100 uppercase tracking-widest">
+                  <Trash size={14} /> Limpiar Todo
+                </button>
+              )}
             </div>
             
             <div className="relative bg-slate-900 rounded-3xl min-h-[500px] overflow-auto flex justify-center p-14 custom-scrollbar shadow-inner border-[6px] border-slate-800">
