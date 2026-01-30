@@ -8,7 +8,8 @@ import {
   TagIcon,
   LayersIcon,
   MaximizeIcon,
-  RotateCcwIcon
+  RotateCcwIcon,
+  SaveIcon
 } from 'lucide-react';
 import { DesignItem, CostTier, QuantityDiscount, CalculationResult } from './types';
 import { packDesigns } from './utils/layout';
@@ -31,9 +32,8 @@ const DESIGN_COLORS = [
   { bg: 'bg-violet-500', text: 'text-white', border: 'border-violet-600' },
 ];
 
-const STORAGE_KEY = 'graficapro_v2_data';
+const STORAGE_KEY = 'graficapro_vfinal_stable';
 
-// Estado inicial por defecto
 const DEFAULT_STATE = {
   sheetWidth: 58,
   profitMargin: 100,
@@ -51,24 +51,25 @@ const DEFAULT_STATE = {
 };
 
 const App: React.FC = () => {
-  // Inicialización ÚNICA y persistente
   const [appData, setAppData] = useState(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
-        const parsed = JSON.parse(saved);
-        // Mezclamos con los valores por defecto por si faltan campos en versiones viejas
-        return { ...DEFAULT_STATE, ...parsed };
+        return { ...DEFAULT_STATE, ...JSON.parse(saved) };
       }
     } catch (e) {
-      console.error("Error cargando localStorage:", e);
+      console.warn("No se pudo cargar localStorage, usando valores por defecto.");
     }
     return DEFAULT_STATE;
   });
 
-  // Guardado automático en cada cambio de appData
+  const [isSaved, setIsSaved] = useState(true);
+
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
+    setIsSaved(true);
+    const timer = setTimeout(() => setIsSaved(false), 2000);
+    return () => clearTimeout(timer);
   }, [appData]);
 
   const [newDesign, setNewDesign] = useState<Omit<DesignItem, 'id'>>({
@@ -80,7 +81,6 @@ const App: React.FC = () => {
 
   const PREVIEW_SCALE = 6;
 
-  // Cálculos derivados
   const packingResult = useMemo(() => {
     return packDesigns(appData.designs, appData.sheetWidth, appData.designSpacing);
   }, [appData.designs, appData.sheetWidth, appData.designSpacing]);
@@ -120,7 +120,6 @@ const App: React.FC = () => {
     };
   }, [appData.designs, packingResult.totalLength, currentPricePerCm, appData.profitMargin, getDiscountForQty]);
 
-  // Manejadores de eventos actualizando el estado atómico
   const updateField = (field: string, value: any) => {
     setAppData(prev => ({ ...prev, [field]: value }));
   };
@@ -142,7 +141,7 @@ const App: React.FC = () => {
   };
 
   const resetToFactory = () => {
-    if(confirm('¿Resetear toda la configuración a valores de fábrica?')) {
+    if(confirm('¿Resetear toda la configuración?')) {
       setAppData(DEFAULT_STATE);
     }
   };
@@ -164,7 +163,10 @@ const App: React.FC = () => {
               <h1 className="text-xl font-bold tracking-tight text-slate-900 leading-none mb-1">
                 Grafica<span className="text-indigo-600">Pro</span>
               </h1>
-              <span className="text-[10px] font-semibold text-slate-400 tracking-wider uppercase">Persistencia Activada</span>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-semibold text-slate-400 tracking-wider uppercase">Persistencia Vercel OK</span>
+                {isSaved && <span className="flex items-center gap-1 text-[9px] text-emerald-500 font-bold uppercase animate-pulse"><SaveIcon size={10}/> Guardado</span>}
+              </div>
             </div>
           </div>
           
@@ -182,8 +184,6 @@ const App: React.FC = () => {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 md:px-6 pt-10 grid grid-cols-1 lg:grid-cols-12 gap-8">
-        
-        {/* Columna Izquierda: Configuración */}
         <div className="lg:col-span-4 space-y-6">
           <section className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200">
             <div className="flex items-center justify-between mb-6">
@@ -191,7 +191,7 @@ const App: React.FC = () => {
                 <Settings className="text-slate-400" />
                 <h2>Ajustes Base</h2>
               </div>
-              <button onClick={resetToFactory} title="Restaurar valores de fábrica" className="text-slate-300 hover:text-indigo-600 transition">
+              <button onClick={resetToFactory} title="Restaurar valores" className="text-slate-300 hover:text-indigo-600 transition">
                 <RotateCcwIcon size={16} />
               </button>
             </div>
@@ -207,7 +207,7 @@ const App: React.FC = () => {
                 </div>
               </div>
               <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-2"><Spacing className="text-slate-300" /> Separación entre piezas (cm)</label>
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-2"><Spacing className="text-slate-300" /> Separación (cm)</label>
                 <input type="number" step="0.1" value={appData.designSpacing} onChange={e => updateField('designSpacing', Number(e.target.value))} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 focus:ring-2 focus:ring-indigo-500/20 outline-none transition font-bold text-slate-900" />
               </div>
             </div>
@@ -219,7 +219,7 @@ const App: React.FC = () => {
               <h2>Nuevo Diseño</h2>
             </div>
             <div className="space-y-4">
-              <input type="text" placeholder="Nombre del diseño..." value={newDesign.name} onChange={e => setNewDesign({...newDesign, name: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 focus:ring-2 focus:ring-indigo-500/20 outline-none transition font-bold text-slate-900" />
+              <input type="text" placeholder="Nombre..." value={newDesign.name} onChange={e => setNewDesign({...newDesign, name: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 focus:ring-2 focus:ring-indigo-500/20 outline-none transition font-bold text-slate-900" />
               <div className="grid grid-cols-3 gap-3">
                 <div className="text-center space-y-1">
                   <label className="text-[9px] font-bold text-slate-400 uppercase block">Ancho</label>
@@ -235,15 +235,14 @@ const App: React.FC = () => {
                 </div>
               </div>
               <button onClick={addDesign} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-2xl transition-all shadow-lg shadow-indigo-100 flex items-center justify-center gap-2">
-                <Plus /> Añadir al Pliego
+                <Plus /> Añadir
               </button>
             </div>
           </section>
 
-          {/* Configuración de Costos */}
           <section className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200">
              <div className="flex items-center justify-between mb-6">
-               <h2 className="text-slate-800 font-bold text-sm flex items-center gap-2"><Tag className="text-slate-400" /> Escala de Costos</h2>
+               <h2 className="text-slate-800 font-bold text-sm flex items-center gap-2"><Tag className="text-slate-400" /> Costos</h2>
                <button onClick={() => updateField('costTiers', [...appData.costTiers, { id: Date.now().toString(), minLargo: 0, maxLargo: 0, precioPorCm: 0 }])} className="text-indigo-600 hover:bg-indigo-50 p-1 rounded-full transition"><Plus size={16}/></button>
              </div>
              <div className="space-y-2">
@@ -261,7 +260,7 @@ const App: React.FC = () => {
 
           <section className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200">
              <div className="flex items-center justify-between mb-6">
-               <h2 className="text-slate-800 font-bold text-sm flex items-center gap-2"><Layers className="text-slate-400" /> Descuentos x Qty</h2>
+               <h2 className="text-slate-800 font-bold text-sm flex items-center gap-2"><Layers className="text-slate-400" /> Descuentos</h2>
                <button onClick={() => updateField('quantityDiscounts', [...appData.quantityDiscounts, { id: Date.now().toString(), minQty: 0, maxQty: 0, discountPercent: 0 }])} className="text-emerald-600 hover:bg-emerald-50 p-1 rounded-full transition"><Plus size={16}/></button>
              </div>
              <div className="space-y-2">
@@ -278,17 +277,16 @@ const App: React.FC = () => {
           </section>
         </div>
 
-        {/* Columna Derecha: Pliego y Resultados */}
         <div className="lg:col-span-8 space-y-8">
           <section className="bg-white rounded-[2rem] p-8 shadow-sm border border-slate-200 relative overflow-hidden">
             <div className="flex items-center justify-between mb-8">
               <div className="flex items-center gap-3">
                 <Layout className="text-indigo-600" />
-                <h2 className="font-bold text-lg text-slate-900">Visualización del Aprovechamiento</h2>
+                <h2 className="font-bold text-lg text-slate-900">Vista de Impresión</h2>
               </div>
               {appData.designs.length > 0 && (
                 <button onClick={clearAll} className="text-rose-500 hover:bg-rose-50 px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 border border-rose-100 uppercase tracking-widest">
-                  <Trash size={14} /> Limpiar Pliego
+                  <Trash size={14} /> Vaciar
                 </button>
               )}
             </div>
@@ -323,7 +321,7 @@ const App: React.FC = () => {
               ) : (
                 <div className="flex flex-col items-center justify-center text-slate-700 opacity-20 py-20">
                   <LayoutIcon size={64} strokeWidth={1} />
-                  <p className="mt-4 font-bold uppercase tracking-widest text-[10px]">Sin diseños cargados</p>
+                  <p className="mt-4 font-bold uppercase tracking-widest text-[10px]">Sin diseños</p>
                 </div>
               )}
             </div>
@@ -332,7 +330,7 @@ const App: React.FC = () => {
           <section className="bg-white rounded-[2rem] p-8 shadow-sm border border-slate-200">
             <div className="flex items-center gap-3 mb-8">
               <Calculator className="text-emerald-600" />
-              <h2 className="font-bold text-lg text-slate-900">Análisis de Costos por Diseño</h2>
+              <h2 className="font-bold text-lg text-slate-900">Costos y Precios</h2>
             </div>
             
             <div className="overflow-x-auto">
@@ -349,7 +347,7 @@ const App: React.FC = () => {
                 <tbody>
                   {appData.designs.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="py-12 text-center text-slate-300 font-bold uppercase tracking-widest italic text-[10px]">Esperando diseños...</td>
+                      <td colSpan={5} className="py-12 text-center text-slate-300 font-bold uppercase tracking-widest text-[10px]">Añade diseños para calcular</td>
                     </tr>
                   ) : (
                     appData.designs.map((design) => {
@@ -384,13 +382,13 @@ const App: React.FC = () => {
             {appData.designs.length > 0 && (
               <div className="mt-10 p-8 bg-slate-900 rounded-[2rem] text-white flex flex-col md:flex-row justify-between items-center gap-8 border border-white/5">
                 <div className="text-center md:text-left">
-                  <p className="text-slate-500 text-[10px] font-bold uppercase tracking-[0.2em] mb-1">Costo Producción Pliego</p>
+                  <p className="text-slate-500 text-[10px] font-bold uppercase tracking-[0.2em] mb-1">Costo Producción</p>
                   <p className="text-3xl font-bold text-white/90">
                     ${(packingResult.totalLength * currentPricePerCm).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                   </p>
                 </div>
                 <div className="text-center md:text-right">
-                  <p className="text-emerald-400 text-[10px] font-bold uppercase tracking-[0.2em] mb-1">Precio Venta Total</p>
+                  <p className="text-emerald-400 text-[10px] font-bold uppercase tracking-[0.2em] mb-1">Precio Venta Final</p>
                   <p className="text-5xl font-black text-emerald-400 tracking-tight">
                     ${appData.designs.reduce((acc, d) => acc + calculateDetails(d).totalClientPrice, 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                   </p>
@@ -402,7 +400,7 @@ const App: React.FC = () => {
       </main>
       
       <footer className="mt-20 text-center text-slate-300 text-[10px] py-10 font-bold uppercase tracking-[0.4em]">
-        GraficaPro v2.0 &bull; Auto-Save OK
+        GraficaPro &bull; v2.1 Stable Persist
       </footer>
     </div>
   );
