@@ -11,6 +11,7 @@ export interface PackedDesign extends DesignItem {
   x: number;
   y: number;
   rotated: boolean;
+  originalId: string;
 }
 
 export interface CostTier {

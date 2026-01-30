@@ -62,6 +62,7 @@ export const packDesigns = (
       rotated = false;
     }
 
+    // Assign originalId to allow cross-referencing to the base design
     for (let i = 0; i < item.quantity; i++) {
       individualUnits.push({
         ...item,
@@ -72,7 +73,7 @@ export const packDesigns = (
         width: finalW,
         height: finalH,
         rotated: rotated
-      } as any);
+      });
     }
   });
 
