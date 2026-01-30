@@ -34,53 +34,39 @@ const DESIGN_COLORS = [
   { bg: 'bg-violet-500', text: 'text-white', border: 'border-violet-600' },
 ];
 
-const STORAGE_KEYS = {
-  SHEET_WIDTH: 'graficapro_sheet_width',
-  PROFIT_MARGIN: 'graficapro_profit_margin',
-  DESIGN_SPACING: 'graficapro_design_spacing',
-  COST_TIERS: 'graficapro_cost_tiers',
-  QUANTITY_DISCOUNTS: 'graficapro_quantity_discounts',
-  DESIGNS: 'graficapro_designs',
-};
+// Clave única para guardar todo el estado de la aplicación
+const STORAGE_KEY = 'grafica_pro_master_state';
 
 const App: React.FC = () => {
-  // Inicialización de estados desde localStorage o valores por defecto
-  const [sheetWidth, setSheetWidth] = useState<number>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.SHEET_WIDTH);
-    return saved ? Number(saved) : 58;
-  });
+  // Intentamos recuperar todo el estado guardado al iniciar
+  const loadSavedState = () => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error("Error cargando datos:", e);
+    }
+    return null;
+  };
+
+  const initialState = loadSavedState();
+
+  const [sheetWidth, setSheetWidth] = useState<number>(initialState?.sheetWidth ?? 58);
+  const [profitMargin, setProfitMargin] = useState<number>(initialState?.profitMargin ?? 100);
+  const [designSpacing, setDesignSpacing] = useState<number>(initialState?.designSpacing ?? 0.2);
   
-  const [profitMargin, setProfitMargin] = useState<number>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.PROFIT_MARGIN);
-    return saved ? Number(saved) : 100;
-  });
+  const [costTiers, setCostTiers] = useState<CostTier[]>(initialState?.costTiers ?? [
+    { id: '1', minLargo: 0, maxLargo: 20, precioPorCm: 10000 },
+    { id: '2', minLargo: 20, maxLargo: 50, precioPorCm: 8000 },
+    { id: '3', minLargo: 50, maxLargo: 100, precioPorCm: 6000 },
+    { id: '4', minLargo: 100, maxLargo: 9999, precioPorCm: 3000 },
+  ]);
 
-  const [designSpacing, setDesignSpacing] = useState<number>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.DESIGN_SPACING);
-    return saved ? Number(saved) : 0.2;
-  });
-  
-  const [costTiers, setCostTiers] = useState<CostTier[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.COST_TIERS);
-    return saved ? JSON.parse(saved) : [
-      { id: '1', minLargo: 0, maxLargo: 20, precioPorCm: 10000 },
-      { id: '2', minLargo: 20, maxLargo: 50, precioPorCm: 8000 },
-      { id: '3', minLargo: 50, maxLargo: 100, precioPorCm: 6000 },
-      { id: '4', minLargo: 100, maxLargo: 9999, precioPorCm: 3000 },
-    ];
-  });
+  const [quantityDiscounts, setQuantityDiscounts] = useState<QuantityDiscount[]>(initialState?.quantityDiscounts ?? [
+    { id: '1', minQty: 10, maxQty: 25, discountPercent: 20 },
+  ]);
 
-  const [quantityDiscounts, setQuantityDiscounts] = useState<QuantityDiscount[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.QUANTITY_DISCOUNTS);
-    return saved ? JSON.parse(saved) : [
-      { id: '1', minQty: 10, maxQty: 25, discountPercent: 20 },
-    ];
-  });
-
-  const [designs, setDesigns] = useState<DesignItem[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.DESIGNS);
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [designs, setDesigns] = useState<DesignItem[]>(initialState?.designs ?? []);
 
   const [newDesign, setNewDesign] = useState<Omit<DesignItem, 'id'>>({
     name: '',
@@ -89,14 +75,17 @@ const App: React.FC = () => {
     quantity: 1
   });
 
-  // Guardar cambios en localStorage automáticamente
+  // Guardar automáticamente CUALQUIER cambio en el estado
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.SHEET_WIDTH, sheetWidth.toString());
-    localStorage.setItem(STORAGE_KEYS.PROFIT_MARGIN, profitMargin.toString());
-    localStorage.setItem(STORAGE_KEYS.DESIGN_SPACING, designSpacing.toString());
-    localStorage.setItem(STORAGE_KEYS.COST_TIERS, JSON.stringify(costTiers));
-    localStorage.setItem(STORAGE_KEYS.QUANTITY_DISCOUNTS, JSON.stringify(quantityDiscounts));
-    localStorage.setItem(STORAGE_KEYS.DESIGNS, JSON.stringify(designs));
+    const stateToSave = {
+      sheetWidth,
+      profitMargin,
+      designSpacing,
+      costTiers,
+      quantityDiscounts,
+      designs
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(stateToSave));
   }, [sheetWidth, profitMargin, designSpacing, costTiers, quantityDiscounts, designs]);
 
   const PREVIEW_SCALE = 6;
@@ -191,8 +180,6 @@ const App: React.FC = () => {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 md:px-6 pt-10 grid grid-cols-1 lg:grid-cols-12 gap-8">
-        
-        {/* Sidebar de Configuración */}
         <div className="lg:col-span-4 space-y-8">
           <section className="bg-white rounded-3xl p-7 shadow-sm border border-slate-200/60">
             <div className="flex items-center gap-2 mb-6 text-slate-800 font-semibold text-sm">
@@ -211,7 +198,7 @@ const App: React.FC = () => {
                 </div>
               </div>
               <div className="space-y-1.5">
-                <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider ml-1 flex items-center gap-2"><Spacing className="text-slate-300" /> Separación entre diseños (cm)</label>
+                <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider ml-1 flex items-center gap-2"><Spacing className="text-slate-300" /> Separación (cm)</label>
                 <input type="number" step="0.1" value={designSpacing} onChange={e => setDesignSpacing(Number(e.target.value))} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 focus:border-indigo-500 outline-none transition font-medium text-slate-900" />
               </div>
             </div>
@@ -247,10 +234,9 @@ const App: React.FC = () => {
             </div>
           </section>
 
-          {/* Configuración de Escalas */}
           <section className="bg-white rounded-3xl p-7 shadow-sm border border-slate-200/60">
              <div className="flex items-center justify-between mb-6">
-               <h2 className="text-slate-800 font-semibold text-sm flex items-center gap-2"><Tag className="text-slate-400" /> Escala de Costos (Largo)</h2>
+               <h2 className="text-slate-800 font-semibold text-sm flex items-center gap-2"><Tag className="text-slate-400" /> Escala de Costos</h2>
                <button onClick={() => setCostTiers([...costTiers, { id: Date.now().toString(), minLargo: 0, maxLargo: 0, precioPorCm: 0 }])} className="text-indigo-600 hover:bg-indigo-50 p-1.5 rounded-full transition"><Plus /></button>
              </div>
              <div className="space-y-2.5">
@@ -268,7 +254,6 @@ const App: React.FC = () => {
              </div>
           </section>
 
-          {/* Descuentos por Cantidad */}
           <section className="bg-white rounded-3xl p-7 shadow-sm border border-slate-200/60">
              <div className="flex items-center justify-between mb-6">
                <h2 className="text-slate-800 font-semibold text-sm flex items-center gap-2"><Layers className="text-slate-400" /> Descuentos x Cantidad</h2>
@@ -293,7 +278,6 @@ const App: React.FC = () => {
           </section>
         </div>
 
-        {/* Visualización y Resultados */}
         <div className="lg:col-span-8 space-y-10">
           <section className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-slate-200/60 overflow-hidden relative">
             <div className="flex items-center justify-between mb-8">
