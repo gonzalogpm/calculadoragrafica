@@ -26,7 +26,8 @@ import {
   LogOutIcon,
   Loader2Icon,
   RulerIcon,
-  CloudOffIcon
+  CloudOffIcon,
+  AlertCircleIcon
 } from 'lucide-react';
 import { 
   DesignItem, 
@@ -144,14 +145,16 @@ const App: React.FC = () => {
         supabase.from('orders').select('*').eq('user_id', userId)
       ]);
 
-      setAppData(prev => ({
-        ...prev,
-        sheetWidth: Number(settings?.sheet_width) || prev.sheetWidth,
-        profitMargin: Number(settings?.profit_margin) || prev.profitMargin,
-        designSpacing: Number(settings?.design_spacing) || prev.designSpacing,
-        clients: cls || [],
-        orders: ords || []
-      }));
+      if (settings || cls || ords) {
+        setAppData(prev => ({
+          ...prev,
+          sheetWidth: Number(settings?.sheet_width) || prev.sheetWidth,
+          profitMargin: Number(settings?.profit_margin) || prev.profitMargin,
+          designSpacing: Number(settings?.design_spacing) || prev.designSpacing,
+          clients: cls || [],
+          orders: ords || []
+        }));
+      }
     } catch (e) {
       console.error("Error cargando desde la nube:", e);
     }
@@ -183,43 +186,43 @@ const App: React.FC = () => {
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!supabase) {
-      alert("⚠️ Supabase no está configurado. Revisa tus variables de entorno.");
+      alert("⚠️ El sistema no está conectado a la base de datos.");
       return;
     }
     setAuthLoading(true);
 
     try {
-      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+      // Intentamos login
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
         email: authEmail,
         password: authPassword,
       });
 
       if (signInError) {
-        if (signInError.message.toLowerCase().includes("invalid login credentials")) {
-          const { error: signUpError } = await supabase.auth.signUp({
-            email: authEmail,
-            password: authPassword,
-          });
+        // Si falla porque no existe o credenciales inválidas, intentamos registrar
+        const { error: signUpError } = await supabase.auth.signUp({
+          email: authEmail,
+          password: authPassword,
+        });
 
-          if (signUpError) {
-            if (signUpError.message.toLowerCase().includes("already registered") || signUpError.message.toLowerCase().includes("already exists")) {
-              alert("❌ Contraseña incorrecta para este correo. Por favor, verifícala.");
-            } else {
-              alert(`❌ Error de registro: ${signUpError.message}`);
-            }
+        if (signUpError) {
+          // Si el registro falla es porque existe pero la pass es distinta
+          if (signUpError.message.includes("already registered") || signUpError.message.includes("already exists")) {
+            alert("❌ La cuenta ya existe pero la contraseña es incorrecta. Por favor, verifica tus datos.");
           } else {
-            alert("✅ Cuenta creada con éxito. Revisa tu correo para confirmar si es necesario.");
-            setIsAuthModalOpen(false);
+            alert(`❌ Error: ${signUpError.message}`);
           }
         } else {
-          alert(`❌ Error al entrar: ${signInError.message}`);
+          alert("✅ ¡Cuenta creada! Ya puedes sincronizar tus datos.");
+          setIsAuthModalOpen(false);
         }
       } else {
+        // Login exitoso
         setIsAuthModalOpen(false);
       }
     } catch (err) {
       console.error(err);
-      alert("Hubo un problema de conexión con el servidor.");
+      alert("Error de conexión. Inténtalo de nuevo.");
     } finally {
       setAuthLoading(false);
     }
@@ -373,35 +376,49 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-700 pb-12">
-      <header className="bg-white/95 backdrop-blur-md border-b border-slate-200 px-8 py-4 sticky top-0 z-[60] shadow-sm">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
+      <header className="bg-white/95 backdrop-blur-md border-b border-slate-200 px-6 py-4 sticky top-0 z-[60] shadow-sm">
+        <div className="max-w-7xl mx-auto flex flex-col lg:flex-row items-center justify-between gap-4">
+          
+          {/* Logo */}
           <div className="flex items-center gap-3">
             <div className="bg-indigo-600 p-2.5 rounded-xl text-white shadow-lg shadow-indigo-200"><CalculatorIcon size={24}/></div>
             <h1 className="text-2xl font-black text-slate-900 tracking-tighter">Crea<span className="text-indigo-600">Stickers</span></h1>
           </div>
           
-          <nav className="flex items-center bg-slate-100 p-1.5 rounded-2xl border border-slate-200 shadow-inner">
-            <button onClick={() => setActiveTab('dash')} className={`px-5 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'dash' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Inicio</button>
-            <button onClick={() => setActiveTab('presupuestar')} className={`px-5 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'presupuestar' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Presupuestar</button>
-            <button onClick={() => setActiveTab('pedidos')} className={`px-5 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'pedidos' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Pedidos</button>
-            <button onClick={() => setActiveTab('clientes')} className={`px-5 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'clientes' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Clientes</button>
-            <button onClick={() => setActiveTab('config')} className={`px-5 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'config' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Ajustes</button>
+          {/* Navegación central */}
+          <nav className="flex items-center bg-slate-100 p-1.5 rounded-2xl border border-slate-200 shadow-inner overflow-x-auto max-w-full">
+            <button onClick={() => setActiveTab('dash')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === 'dash' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Inicio</button>
+            <button onClick={() => setActiveTab('presupuestar')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === 'presupuestar' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Presupuestar</button>
+            <button onClick={() => setActiveTab('pedidos')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === 'pedidos' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Pedidos</button>
+            <button onClick={() => setActiveTab('clientes')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === 'clientes' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Clientes</button>
+            <button onClick={() => setActiveTab('config')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === 'config' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Ajustes</button>
           </nav>
 
-          <div className="flex items-center gap-4 min-w-[150px] justify-end">
+          {/* Sección de Auth Mejorada */}
+          <div className="flex items-center gap-3 min-w-[180px] justify-end">
              {session?.user ? (
-               <button onClick={() => supabase?.auth.signOut()} className="flex items-center gap-2 text-[10px] font-black text-emerald-600 uppercase bg-emerald-50 border border-emerald-100 px-4 py-2.5 rounded-full hover:bg-emerald-100 transition-all shadow-sm">
-                 <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-                 {session.user.email?.split('@')[0] || 'Usuario'} <LogOutIcon size={12}/>
+               <button 
+                 onClick={() => {
+                   askConfirmation("Cerrar Sesión", "¿Seguro que quieres desconectar el taller de la nube?", () => supabase?.auth.signOut());
+                 }} 
+                 className="flex items-center gap-2 text-[10px] font-black text-emerald-600 uppercase bg-emerald-50 border border-emerald-200 px-4 py-2.5 rounded-full hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 transition-all shadow-sm group"
+               >
+                 <div className="w-2 h-2 rounded-full bg-emerald-500 group-hover:bg-rose-500 animate-pulse"></div>
+                 {session.user.email?.split('@')[0] || 'Conectado'}
+                 <LogOutIcon size={12} className="ml-1 opacity-50"/>
                </button>
              ) : (
-               <button onClick={() => setIsAuthModalOpen(true)} className="flex items-center gap-2 text-[10px] font-black text-slate-500 uppercase bg-white border-2 border-slate-200 px-5 py-2.5 rounded-full hover:bg-indigo-600 hover:text-white hover:border-indigo-600 transition-all shadow-sm">
+               <button 
+                 onClick={() => setIsAuthModalOpen(true)} 
+                 className="flex items-center gap-3 text-[11px] font-black text-white uppercase bg-indigo-600 border-2 border-indigo-500 px-6 py-2.5 rounded-full hover:bg-indigo-700 hover:scale-105 transition-all shadow-lg shadow-indigo-100"
+               >
                  <LogInIcon size={14}/> Sincronizar Nube
                </button>
              )}
+             
              {!supabase && (
-               <div className="flex items-center gap-1 text-[9px] font-black text-amber-500 uppercase bg-amber-50 px-3 py-1.5 rounded-full border border-amber-100">
-                 <CloudOffIcon size={12}/> Modo Local
+               <div title="Base de datos no configurada" className="flex items-center gap-1 text-[9px] font-black text-amber-500 uppercase bg-amber-50 px-3 py-1.5 rounded-full border border-amber-200">
+                 <CloudOffIcon size={12}/> Local
                </div>
              )}
           </div>
@@ -424,7 +441,6 @@ const App: React.FC = () => {
            </div>
         )}
 
-        {/* PRESUPUESTAR */}
         {activeTab === 'presupuestar' && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 animate-in fade-in duration-500">
             <div className="lg:col-span-4 space-y-8">
@@ -528,7 +544,7 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* PEDIDOS, CLIENTES Y AJUSTES */}
+        {/* OTROS TABS (Pedidos, Clientes, Config) SE MANTIENEN IGUAL QUE ANTES */}
         {activeTab === 'pedidos' && (
            <div className="space-y-10 animate-in fade-in duration-500">
               <div className="flex flex-col lg:flex-row items-center justify-between gap-8 bg-white p-8 rounded-[3rem] shadow-sm border border-slate-200">
@@ -669,12 +685,12 @@ const App: React.FC = () => {
                  </div>
               </section>
 
-              <section className="bg-white rounded-[3rem] p-8 border border-slate-200 shadow-sm">
+              <section className="bg-white rounded-[3rem] p-8 border border-slate-200 shadow-sm flex flex-col">
                  <div className="flex items-center justify-between mb-8">
                     <h2 className="text-slate-900 font-black text-sm uppercase tracking-widest flex items-center gap-3"><PercentIcon className="text-indigo-600" size={18}/> Descuentos Cantidad</h2>
                     <button onClick={() => updateData('quantityDiscounts', [...appData.quantityDiscounts, { id: Date.now().toString(), minQty: 0, maxQty: 0, discountPercent: 0 }])} className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl transition-all"><PlusIcon size={18}/></button>
                  </div>
-                 <div className="space-y-3">
+                 <div className="space-y-3 flex-1">
                     {appData.quantityDiscounts.map((disc, idx) => (
                       <div key={disc.id} className="flex gap-2 items-center bg-slate-50 p-3 rounded-2xl border border-slate-100 group">
                          <input type="number" placeholder="Min" value={disc.minQty} onChange={e => { const nd = [...appData.quantityDiscounts]; nd[idx].minQty = Number(e.target.value); updateData('quantityDiscounts', nd); }} className="w-12 bg-white border border-slate-200 rounded p-1.5 text-[10px] font-black text-center" />
@@ -684,14 +700,17 @@ const App: React.FC = () => {
                          <button onClick={() => askConfirmation("Borrar Descuento", "¿Eliminar esta regla de descuento?", () => updateData('quantityDiscounts', appData.quantityDiscounts.filter(d => d.id !== disc.id)))} className="text-slate-200 hover:text-rose-500 transition-all opacity-0 group-hover:opacity-100"><TrashIcon size={16}/></button>
                       </div>
                     ))}
-                    {appData.quantityDiscounts.length === 0 && <p className="text-center text-[10px] font-black text-slate-300 uppercase tracking-widest py-10 italic">Sin descuentos configurados</p>}
+                    {appData.quantityDiscounts.length === 0 && <p className="text-center text-[10px] font-black text-slate-300 uppercase tracking-widest py-10 italic">Sin descuentos</p>}
+                 </div>
+                 <div className="mt-8 pt-8 border-t border-slate-100">
+                    <button onClick={() => askConfirmation("Reset Total", "Esto borrará TODO (clientes, pedidos, ajustes) de este navegador. ¿Seguro?", () => { localStorage.clear(); window.location.reload(); })} className="w-full flex items-center justify-center gap-2 py-3 bg-rose-50 text-rose-500 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-rose-500 hover:text-white transition-all"><AlertCircleIcon size={14}/> Limpiar Datos Locales</button>
                  </div>
               </section>
            </div>
         )}
       </main>
 
-      {/* MODALES */}
+      {/* MODAL AUTH */}
       {isAuthModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex items-center justify-center p-6 animate-in fade-in duration-300">
            <div className="bg-white w-full max-w-sm rounded-[3rem] p-10 shadow-2xl relative">
@@ -706,7 +725,11 @@ const App: React.FC = () => {
                     <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Contraseña</label>
                     <input type="password" required value={authPassword} onChange={e => setAuthPassword(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-bold outline-none" placeholder="••••••••" />
                  </div>
-                 <p className="text-[10px] text-slate-400 font-medium italic">Si ya tienes cuenta, usa tu contraseña habitual. Si no, se creará una nueva.</p>
+                 <div className="bg-amber-50 p-4 rounded-xl border border-amber-100">
+                    <p className="text-[10px] text-amber-700 font-bold leading-tight uppercase tracking-tight">
+                       Si el correo no existe, se creará. Si ya existe, debes usar la contraseña original.
+                    </p>
+                 </div>
                  <button type="submit" disabled={authLoading} className="w-full bg-indigo-600 text-white font-black py-5 rounded-2xl uppercase text-[11px] tracking-widest shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center justify-center gap-3">
                     {authLoading ? <Loader2Icon className="animate-spin" size={18}/> : 'Sincronizar Ahora'}
                  </button>
@@ -715,6 +738,7 @@ const App: React.FC = () => {
         </div>
       )}
 
+      {/* OTROS MODALES (Order, Summary, Client, Confirm) SE MANTIENEN IGUAL */}
       {isOrderModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4 animate-in fade-in duration-300">
            <div className="bg-white w-full max-md rounded-[2rem] p-5 shadow-2xl relative overflow-hidden border border-slate-200">
