@@ -387,41 +387,45 @@ const App: React.FC = () => {
 
       <main className="max-w-7xl mx-auto p-6 lg:p-10">
         {activeTab === 'dash' && (
-           <div className="space-y-10">
-              {session?.user && ((appData.clients?.length || 0) > 0 || (appData.orders?.length || 0) > 0) && (
-                <div className="bg-indigo-600 rounded-[3rem] p-10 flex flex-col md:flex-row items-center justify-between gap-8 text-white shadow-2xl">
-                   <div className="flex items-center gap-6">
-                      <div className="w-16 h-16 bg-white/20 rounded-3xl flex items-center justify-center"><CloudUploadIcon size={32}/></div>
-                      <div className="max-w-md">
-                         <h3 className="text-xl font-black uppercase mb-1">Backup Disponible</h3>
-                         <p className="text-indigo-100 text-xs font-bold uppercase tracking-widest leading-relaxed">Sincroniza tus datos locales con la nube.</p>
-                      </div>
-                   </div>
-                   <button disabled={isMigrating} onClick={pushLocalDataToCloud} className="bg-white text-indigo-600 px-10 py-5 rounded-2xl font-black text-xs uppercase shadow-xl hover:scale-105 transition-all">
-                     {isMigrating ? <Loader2Icon className="animate-spin" size={18}/> : 'Subir Datos'}
-                   </button>
-                </div>
-              )}
-              {deferredPrompt && (
-                <div className="bg-white rounded-[2rem] p-8 border shadow-sm flex items-center justify-between">
-                   <div className="flex items-center gap-4">
-                      <div className="bg-slate-100 p-3 rounded-2xl text-slate-900"><SmartphoneIcon/></div>
-                      <div>
-                        <h4 className="font-black text-xs uppercase">Instalar App</h4>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase">Instala CreaStickers en tu pantalla de inicio.</p>
-                      </div>
-                   </div>
-                   <button onClick={handleInstallClick} className="bg-slate-900 text-white px-6 py-3 rounded-xl font-black text-[10px] uppercase flex items-center gap-2"><DownloadIcon size={14}/> Instalar</button>
-                </div>
-              )}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+           <div className="space-y-12">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                  {(appData.statuses || []).map(s => (
-                   <div key={s.id} className="bg-white p-10 rounded-[3rem] border shadow-sm flex flex-col items-center group transition-all hover:border-indigo-200">
-                      <div className={`w-4 h-4 rounded-full ${s.color} mb-4`}></div>
-                      <div className="text-5xl font-black text-slate-900 mb-2">{(appData.orders || []).filter(o => o && o.status_id === s.id).length}</div>
-                      <div className="text-[11px] font-black text-slate-400 uppercase tracking-widest">{s.name}</div>
+                   <div key={s.id} className="bg-white p-8 rounded-[2.5rem] border shadow-sm flex flex-col items-center group transition-all hover:border-indigo-200">
+                      <div className={`w-3 h-3 rounded-full ${s.color} mb-3`}></div>
+                      <div className="text-4xl font-black text-slate-900 mb-1">{(appData.orders || []).filter(o => o && o.status_id === s.id).length}</div>
+                      <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{s.name}</div>
                    </div>
                  ))}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {session?.user && ((appData.clients?.length || 0) > 0 || (appData.orders?.length || 0) > 0) && (
+                  <div className="bg-indigo-600 rounded-[2rem] p-6 flex items-center justify-between gap-4 text-white shadow-xl">
+                     <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 bg-white/20 rounded-2xl flex items-center justify-center shrink-0"><CloudUploadIcon size={20}/></div>
+                        <div>
+                           <h3 className="text-sm font-black uppercase leading-tight">Backup Nube</h3>
+                           <p className="text-indigo-100 text-[9px] font-bold uppercase tracking-widest">Sincroniza tus datos.</p>
+                        </div>
+                     </div>
+                     <button disabled={isMigrating} onClick={pushLocalDataToCloud} className="bg-white text-indigo-600 px-6 py-3 rounded-xl font-black text-[10px] uppercase shadow-md hover:scale-105 transition-all">
+                       {isMigrating ? <Loader2Icon className="animate-spin" size={14}/> : 'Subir'}
+                     </button>
+                  </div>
+                )}
+                
+                {deferredPrompt && (
+                  <div className="bg-white rounded-[2rem] p-6 border shadow-sm flex items-center justify-between gap-4">
+                     <div className="flex items-center gap-4">
+                        <div className="bg-slate-100 p-2.5 rounded-2xl text-slate-900 shrink-0"><SmartphoneIcon size={20}/></div>
+                        <div>
+                          <h4 className="font-black text-sm uppercase leading-tight">Instalar App</h4>
+                          <p className="text-[9px] font-bold text-slate-400 uppercase">Acceso directo en pantalla.</p>
+                        </div>
+                     </div>
+                     <button onClick={handleInstallClick} className="bg-slate-900 text-white px-6 py-3 rounded-xl font-black text-[10px] uppercase flex items-center gap-2 hover:scale-105 transition-all"><DownloadIcon size={14}/> Instalar</button>
+                  </div>
+                )}
               </div>
            </div>
         )}
@@ -726,13 +730,19 @@ const App: React.FC = () => {
         <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-md z-[200] flex items-center justify-center p-6">
            <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-10 shadow-2xl relative text-center">
               <button onClick={() => setShowSummary(null)} className="absolute top-6 right-6 text-slate-300 hover:text-slate-900 transition-all"><XIcon size={24}/></button>
-              <div className="w-20 h-20 bg-indigo-600 rounded-[2rem] flex items-center justify-center text-white mb-6 mx-auto"><CalculatorIcon size={36}/></div>
-              <h2 className="font-black text-xl uppercase mb-6 tracking-tight">Ticket</h2>
-              <div className="space-y-4 border-y py-6 mb-8 text-left text-xs uppercase font-bold">
-                 <div className="flex justify-between"><span>Pedido:</span><span className="text-slate-900">#{showSummary.order_number}</span></div>
-                 <div className="flex justify-between"><span>Total:</span><span className="text-indigo-600 font-black">${showSummary.total_price.toLocaleString()}</span></div>
-                 <div className="flex justify-between text-rose-500 font-black"><span>Saldo:</span><span>${showSummary.balance.toLocaleString()}</span></div>
+              <div className="w-16 h-16 bg-indigo-600 rounded-[1.5rem] flex items-center justify-center text-white mb-6 mx-auto"><CalculatorIcon size={32}/></div>
+              <h2 className="font-black text-xl uppercase mb-6 tracking-tight">Resumen de Pedido</h2>
+              
+              <div className="space-y-3 border-y py-6 mb-8 text-left text-[11px] uppercase font-bold">
+                 <div className="flex justify-between border-b pb-2 border-slate-50"><span>Ticket:</span><span className="text-slate-900 font-black">#{showSummary.order_number}</span></div>
+                 <div className="flex justify-between"><span>Cliente:</span><span className="text-slate-900">{(appData.clients || []).find(c => c.id === showSummary.client_id)?.name || 'S/N'}</span></div>
+                 <div className="flex justify-between"><span>Categoría:</span><span className="text-slate-900">{(appData.categories || []).find(cat => cat.id === showSummary.category_id)?.name || 'S/N'}</span></div>
+                 <div className="flex justify-between"><span>Cantidad:</span><span className="text-slate-900">{showSummary.quantity} u.</span></div>
+                 <div className="flex justify-between text-indigo-600 font-black pt-2"><span>Total:</span><span>${showSummary.total_price.toLocaleString()}</span></div>
+                 <div className="flex justify-between text-emerald-600 font-black"><span>Seña:</span><span>${showSummary.deposit.toLocaleString()}</span></div>
+                 <div className="flex justify-between text-rose-500 font-black"><span>Saldo Restante:</span><span>${showSummary.balance.toLocaleString()}</span></div>
               </div>
+
               <button onClick={() => {
                 const cFound = (appData.clients || []).find(cl => cl && cl.id === showSummary.client_id);
                 const catFound = (appData.categories || []).find(cat => cat && cat.id === showSummary.category_id);
