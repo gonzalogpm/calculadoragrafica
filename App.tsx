@@ -117,9 +117,31 @@ const App: React.FC = () => {
       const saved = localStorage.getItem(MASTER_KEY);
       if (saved) {
         try {
-          const parsed = JSON.parse(saved);
+          let parsed = JSON.parse(saved);
+          
+          // MIGRACIÓN DE DATOS LOCALES (camelCase a snake_case)
+          if (parsed.clients) {
+            parsed.clients = parsed.clients.map((c: any) => ({
+              ...c,
+              created_at: c.created_at || c.createdAt || Date.now()
+            }));
+          }
+          if (parsed.orders) {
+            parsed.orders = parsed.orders.map((o: any) => ({
+              ...o,
+              order_number: o.order_number || o.orderNumber || '',
+              client_id: o.client_id || o.clientId || '',
+              category_id: o.category_id || o.categoryId || '1',
+              total_price: o.total_price || o.totalPrice || 0,
+              status_id: o.status_id || o.statusId || 'hacer',
+              created_at: o.created_at || o.createdAt || Date.now()
+            }));
+          }
+          
           setAppData(prev => ({ ...prev, ...parsed }));
-        } catch (e) { }
+        } catch (e) { 
+          console.error("Error cargando caché local:", e);
+        }
       }
 
       if (!supabase) {
@@ -182,11 +204,32 @@ const App: React.FC = () => {
     setIsMigrating(true);
     try {
       if (appData.clients.length > 0) {
-        const clientsToUpload = appData.clients.map(c => ({ ...c, user_id: session.user.id }));
+        const clientsToUpload = appData.clients.map(c => ({
+          id: c.id,
+          name: c.name,
+          phone: c.phone,
+          address: c.address,
+          created_at: c.created_at,
+          user_id: session.user.id
+        }));
         await supabase.from('clients').upsert(clientsToUpload);
       }
       if (appData.orders.length > 0) {
-        const ordersToUpload = appData.orders.map(o => ({ ...o, user_id: session.user.id }));
+        const ordersToUpload = appData.orders.map(o => ({
+          id: o.id,
+          order_number: o.order_number,
+          client_id: o.client_id,
+          width: o.width,
+          height: o.height,
+          quantity: o.quantity,
+          category_id: o.category_id,
+          total_price: o.total_price,
+          deposit: o.deposit,
+          balance: o.balance,
+          status_id: o.status_id,
+          created_at: o.created_at,
+          user_id: session.user.id
+        }));
         await supabase.from('orders').upsert(ordersToUpload);
       }
       await supabase.from('settings').upsert({
@@ -372,9 +415,13 @@ const App: React.FC = () => {
   };
 
   const filteredOrders = useMemo(() => {
+    const search = orderSearch.toLowerCase();
     return appData.orders.filter(o => {
       const client = appData.clients.find(c => c.id === o.client_id);
-      const matchesText = client?.name.toLowerCase().includes(orderSearch.toLowerCase()) || o.order_number.includes(orderSearch);
+      const orderNum = (o.order_number || '').toLowerCase();
+      const clientName = (client?.name || '').toLowerCase();
+      
+      const matchesText = clientName.includes(search) || orderNum.includes(search);
       const matchesStatus = orderStatusFilter === 'all' || o.status_id === orderStatusFilter;
       return matchesText && matchesStatus;
     }).sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
@@ -385,10 +432,12 @@ const App: React.FC = () => {
   const [clientSearch, setClientSearch] = useState('');
 
   const filteredClients = useMemo(() => {
-    return appData.clients.filter(c => 
-      c.name.toLowerCase().includes(clientSearch.toLowerCase()) || 
-      c.phone.includes(clientSearch)
-    );
+    const search = clientSearch.toLowerCase();
+    return appData.clients.filter(c => {
+      const name = (c.name || '').toLowerCase();
+      const phone = (c.phone || '').toLowerCase();
+      return name.includes(search) || phone.includes(search);
+    });
   }, [appData.clients, clientSearch]);
 
   const saveClient = async () => {
@@ -657,10 +706,10 @@ const App: React.FC = () => {
                            <tr key={c.id} className="hover:bg-indigo-50/20 group">
                               <td className="px-10 py-8">
                                  <div className="flex items-center gap-5">
-                                    <div className="w-12 h-12 bg-slate-900 text-white rounded-2xl flex items-center justify-center font-black text-xl shadow-lg">{c.name.charAt(0)}</div>
+                                    <div className="w-12 h-12 bg-slate-900 text-white rounded-2xl flex items-center justify-center font-black text-xl shadow-lg">{c.name ? c.name.charAt(0) : '?'}</div>
                                     <div>
                                        <div className="font-black text-slate-900 uppercase text-sm leading-none mb-1 flex items-center gap-2">
-                                          {c.name}
+                                          {c.name || 'S/N'}
                                           {isLocal && session?.user && <div className="bg-rose-100 text-rose-500 px-2 py-0.5 rounded text-[8px] font-black">LOCAL</div>}
                                           {!isLocal && session?.user && <CloudIcon size={12} className="text-emerald-500"/>}
                                        </div>
