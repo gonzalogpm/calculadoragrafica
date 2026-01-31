@@ -28,7 +28,9 @@ import {
   RulerIcon,
   CloudOffIcon,
   AlertCircleIcon,
-  SettingsIcon
+  SettingsIcon,
+  ShieldAlertIcon,
+  ClockIcon
 } from 'lucide-react';
 import { 
   DesignItem, 
@@ -107,15 +109,12 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const init = async () => {
-      // Cargar datos locales siempre primero por velocidad
       const saved = localStorage.getItem(MASTER_KEY);
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
           setAppData(prev => ({ ...prev, ...parsed }));
-        } catch (e) {
-          console.error("Error cargando caché local");
-        }
+        } catch (e) { console.error("Error caché local"); }
       }
 
       if (!supabase) {
@@ -126,12 +125,8 @@ const App: React.FC = () => {
       try {
         const { data: { session: currentSession } } = await supabase.auth.getSession();
         setSession(currentSession);
-        if (currentSession?.user) {
-          await fetchCloudData(currentSession.user.id);
-        }
-      } catch (e) {
-        console.error("Fallo al conectar con Supabase Auth");
-      }
+        if (currentSession?.user) await fetchCloudData(currentSession.user.id);
+      } catch (e) { console.error("Error Auth Supabase"); }
       setLoading(false);
     };
 
@@ -163,9 +158,7 @@ const App: React.FC = () => {
         clients: cls || prev.clients,
         orders: ords || prev.orders
       }));
-    } catch (e) {
-      console.error("Error sincronizando nube");
-    }
+    } catch (e) { console.error("Error Sync Nube"); }
   };
 
   useEffect(() => {
@@ -183,11 +176,8 @@ const App: React.FC = () => {
           design_spacing: appData.designSpacing,
           updated_at: new Date().toISOString()
         });
-      } catch (e) {
-        console.warn("Error en sincronización automática");
-      }
+      } catch (e) { }
     };
-    
     sync();
   }, [appData, session, loading]);
 
@@ -197,39 +187,49 @@ const App: React.FC = () => {
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!supabase) {
-      alert("⚠️ El sistema no tiene las llaves de Supabase configuradas en el servidor. El botón de Sincronizar solo funciona si configuras las variables VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY.");
-      return;
-    }
+    if (!supabase) return;
     setAuthLoading(true);
 
     try {
+      // Intentar login directamente
       const { data, error: signInError } = await supabase.auth.signInWithPassword({
         email: authEmail,
         password: authPassword,
       });
 
       if (signInError) {
-        const { error: signUpError } = await supabase.auth.signUp({
-          email: authEmail,
-          password: authPassword,
-        });
+        // Manejo específico del error de límite de tasa
+        if (signInError.message.toLowerCase().includes("rate limit")) {
+          alert("⏳ Límite de intentos excedido. Por seguridad, el servidor te ha bloqueado temporalmente. Por favor, espera 10 minutos y vuelve a intentar.");
+          setAuthLoading(false);
+          return;
+        }
 
-        if (signUpError) {
-          if (signUpError.message.includes("already registered") || signUpError.message.includes("already exists")) {
-            alert("❌ La contraseña es incorrecta para este correo.");
+        // Si no existe el usuario, intentar registro
+        if (signInError.message.toLowerCase().includes("invalid login credentials")) {
+          const { error: signUpError } = await supabase.auth.signUp({
+            email: authEmail,
+            password: authPassword,
+          });
+
+          if (signUpError) {
+             if (signUpError.message.toLowerCase().includes("rate limit")) {
+                alert("⏳ Límite de registro excedido. Por favor, espera unos minutos antes de intentar crear una cuenta nueva.");
+             } else {
+                alert(`❌ Error: ${signUpError.message}`);
+             }
           } else {
-            alert(`❌ Error: ${signUpError.message}`);
+            alert("✅ ¡Cuenta creada! Ya puedes sincronizar.");
+            setIsAuthModalOpen(false);
           }
         } else {
-          alert("✅ Cuenta creada con éxito.");
-          setIsAuthModalOpen(false);
+          alert(`❌ Error de acceso: ${signInError.message}`);
         }
       } else {
         setIsAuthModalOpen(false);
       }
     } catch (err) {
-      alert("Problema de conexión.");
+      alert("Error inesperado en la conexión.");
     } finally {
       setAuthLoading(false);
     }
@@ -384,15 +384,13 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-700 pb-12">
       <header className="bg-white/95 backdrop-blur-md border-b border-slate-200 px-6 py-4 sticky top-0 z-[60] shadow-sm">
-        <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 items-center gap-6">
+        <div className="max-w-7xl mx-auto flex flex-col lg:flex-row items-center justify-between gap-6">
           
-          {/* Col 1: Logo */}
-          <div className="flex items-center gap-3 justify-start">
+          <div className="flex items-center gap-3">
             <div className="bg-indigo-600 p-2.5 rounded-xl text-white shadow-lg shadow-indigo-200"><CalculatorIcon size={24}/></div>
             <h1 className="text-2xl font-black text-slate-900 tracking-tighter">Crea<span className="text-indigo-600">Stickers</span></h1>
           </div>
           
-          {/* Col 2: Navegación */}
           <nav className="flex items-center justify-center bg-slate-100 p-1 rounded-2xl border border-slate-200 shadow-inner overflow-x-auto">
             <button onClick={() => setActiveTab('dash')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === 'dash' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Inicio</button>
             <button onClick={() => setActiveTab('presupuestar')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === 'presupuestar' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Presu</button>
@@ -401,12 +399,11 @@ const App: React.FC = () => {
             <button onClick={() => setActiveTab('config')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === 'config' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Ajustes</button>
           </nav>
 
-          {/* Col 3: Autenticación - SIEMPRE VISIBLE */}
-          <div className="flex items-center gap-3 justify-end">
+          <div className="flex items-center gap-3 min-w-[200px] justify-end">
              {session?.user ? (
                <button 
                  onClick={() => askConfirmation("Cerrar Sesión", "¿Quieres desconectar el taller de la nube?", () => supabase?.auth.signOut())} 
-                 className="flex items-center gap-2 text-[10px] font-black text-emerald-600 uppercase bg-emerald-50 border border-emerald-200 px-5 py-3 rounded-full hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 transition-all shadow-sm"
+                 className="flex items-center gap-2 text-[10px] font-black text-emerald-600 uppercase bg-emerald-50 border border-emerald-200 px-5 py-3 rounded-full hover:bg-rose-50 hover:text-rose-600 transition-all shadow-sm"
                >
                  <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
                  {session.user.email?.split('@')[0] || 'Conectado'}
@@ -416,25 +413,19 @@ const App: React.FC = () => {
                <div className="flex items-center gap-2">
                  {!supabase ? (
                    <button 
-                     onClick={() => alert("⚠️ ERROR DE DEPLOY: Las llaves VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY no están configuradas en tu servidor de hosting. Debes agregarlas en el panel de control de tu proyecto para activar la nube.")}
-                     className="flex items-center gap-2 text-[10px] font-black text-white uppercase bg-amber-500 px-6 py-3 rounded-full shadow-lg hover:bg-amber-600 transition-all border-b-4 border-amber-700 active:translate-y-1 active:border-b-0"
+                     onClick={() => alert("🚨 CONFIGURACIÓN REQUERIDA: Debes agregar VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY en tu panel de Hosting (Vercel/Netlify) para usar la nube.")}
+                     className="flex items-center gap-2 text-[10px] font-black text-white uppercase bg-rose-500 px-6 py-3 rounded-full shadow-lg hover:bg-rose-600 transition-all border-b-4 border-rose-800"
                    >
-                     <SettingsIcon size={14} className="animate-spin-slow"/> Configurar Nube
+                     <ShieldAlertIcon size={14}/> Error de Nube
                    </button>
                  ) : (
                    <button 
                      onClick={() => setIsAuthModalOpen(true)} 
-                     className="flex items-center gap-3 text-[11px] font-black text-white uppercase bg-indigo-600 border-2 border-indigo-400 px-8 py-3 rounded-full hover:bg-indigo-700 hover:scale-105 transition-all shadow-xl shadow-indigo-100"
+                     className="flex items-center gap-3 text-[11px] font-black text-white uppercase bg-indigo-600 border-2 border-indigo-400 px-8 py-3 rounded-full hover:bg-indigo-700 hover:scale-105 transition-all shadow-xl"
                    >
-                     <LogInIcon size={16}/> Sincronizar Nube
+                     <CloudIcon size={16}/> Sincronizar Nube
                    </button>
                  )}
-               </div>
-             )}
-             
-             {!supabase && (
-               <div className="hidden sm:flex items-center gap-1 text-[9px] font-black text-slate-400 uppercase bg-slate-100 px-3 py-1.5 rounded-full border border-slate-200">
-                 <CloudOffIcon size={12}/> Modo Local
                </div>
              )}
           </div>
@@ -442,7 +433,6 @@ const App: React.FC = () => {
       </header>
 
       <main className="max-w-7xl mx-auto p-6 md:p-10">
-        {/* DASHBOARD */}
         {activeTab === 'dash' && (
            <div className="space-y-10 animate-in fade-in duration-500">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
@@ -457,7 +447,6 @@ const App: React.FC = () => {
            </div>
         )}
 
-        {/* PRESUPUESTAR */}
         {activeTab === 'presupuestar' && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 animate-in fade-in duration-500">
             <div className="lg:col-span-4 space-y-8">
@@ -561,7 +550,6 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* PEDIDOS */}
         {activeTab === 'pedidos' && (
            <div className="space-y-10 animate-in fade-in duration-500">
               <div className="flex flex-col lg:flex-row items-center justify-between gap-8 bg-white p-8 rounded-[3rem] shadow-sm border border-slate-200">
@@ -571,11 +559,10 @@ const App: React.FC = () => {
                  </div>
                  <div className="flex items-center gap-3 w-full lg:w-auto overflow-x-auto pb-2">
                     <button onClick={() => setOrderStatusFilter('all')} className={`px-6 py-3.5 rounded-xl text-[11px] font-black uppercase tracking-widest border transition-all ${orderStatusFilter === 'all' ? 'bg-slate-900 text-white shadow-lg' : 'bg-white text-slate-400 border-slate-200 hover:border-slate-400'}`}>Todos</button>
-                    {appData.statuses.map(s => <button key={s.id} onClick={() => setOrderStatusFilter(s.id)} className={`px-6 py-3.5 rounded-xl text-[11px] font-black uppercase tracking-widest border whitespace-nowrap transition-all ${orderStatusFilter === s.id ? 'bg-indigo-600 text-white shadow-lg' : 'bg-white text-slate-400 border-slate-200 hover:border-slate-400'}`}>{s.name}</button>)}
-                    <button onClick={handleOpenNewOrder} className="ml-6 bg-indigo-600 text-white px-10 py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-xl shadow-indigo-100 flex items-center gap-3 hover:bg-indigo-700 active:scale-95 transition-all"><PlusIcon size={16}/> Cargar Pedido</button>
+                    {appData.statuses.map(s => <button key={s.id} onClick={() => setOrderStatusFilter(s.id)} className={`px-6 py-3.5 rounded-xl text-[11px] font-black uppercase tracking-widest border transition-all ${orderStatusFilter === s.id ? 'bg-indigo-600 text-white shadow-lg' : 'bg-white text-slate-400 border-slate-200 hover:border-slate-400'}`}>{s.name}</button>)}
+                    <button onClick={handleOpenNewOrder} className="ml-6 bg-indigo-600 text-white px-10 py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-xl flex items-center gap-3 hover:bg-indigo-700 active:scale-95 transition-all"><PlusIcon size={16}/> Cargar Pedido</button>
                  </div>
               </div>
-
               <div className="grid gap-5">
                  {filteredOrders.map(o => {
                    const client = appData.clients.find(c => c.id === o.clientId);
@@ -596,13 +583,13 @@ const App: React.FC = () => {
                            </div>
                         </div>
                         <div className="flex flex-wrap items-center justify-end gap-10 w-full md:w-auto text-right">
-                           <div className="min-w-[80px]"><div className="text-[10px] font-black text-slate-300 uppercase mb-1">Total</div><div className="font-black text-slate-900 text-lg">$ {o.totalPrice.toLocaleString()}</div></div>
-                           <div className="min-w-[80px]"><div className="text-[10px] font-black text-emerald-300 uppercase mb-1">Seña</div><div className="font-black text-emerald-600">$ {o.deposit.toLocaleString()}</div></div>
-                           <div className="min-w-[80px]"><div className="text-[10px] font-black text-rose-300 uppercase mb-1">Restante</div><div className="font-black text-rose-500 text-xl font-black">$ {o.balance.toLocaleString()}</div></div>
+                           <div className="min-w-[80px] text-right"><div className="text-[10px] font-black text-slate-300 uppercase mb-1">Total</div><div className="font-black text-slate-900 text-lg">$ {o.totalPrice.toLocaleString()}</div></div>
+                           <div className="min-w-[80px] text-right"><div className="text-[10px] font-black text-emerald-300 uppercase mb-1">Seña</div><div className="font-black text-emerald-600">$ {o.deposit.toLocaleString()}</div></div>
+                           <div className="min-w-[80px] text-right"><div className="text-[10px] font-black text-rose-300 uppercase mb-1">Restante</div><div className="font-black text-rose-500 text-xl font-black">$ {o.balance.toLocaleString()}</div></div>
                            <div className="flex gap-3">
-                              <button onClick={() => setShowSummary(o)} className="p-4 bg-slate-50 text-slate-400 rounded-2xl hover:bg-indigo-50 hover:text-indigo-600 transition-all active:scale-90"><Share2Icon size={20}/></button>
-                              <button onClick={() => { setEditingOrder(o); setOrderForm(o); setIsOrderModalOpen(true); }} className="p-4 bg-slate-50 text-slate-400 rounded-2xl hover:bg-indigo-50 hover:text-indigo-600 transition-all active:scale-90"><Edit3Icon size={20}/></button>
-                              <button onClick={() => askConfirmation("Borrar Pedido", `¿Seguro que deseas eliminar el pedido #${o.orderNumber}?`, () => updateData('orders', appData.orders.filter(ord => ord.id !== o.id)))} className="p-4 bg-white border border-slate-100 text-slate-200 hover:text-rose-500 transition-all opacity-0 group-hover:opacity-100 rounded-xl active:scale-90"><TrashIcon size={18}/></button>
+                              <button onClick={() => setShowSummary(o)} className="p-4 bg-slate-50 text-slate-400 rounded-2xl hover:bg-indigo-50 hover:text-indigo-600 transition-all"><Share2Icon size={20}/></button>
+                              <button onClick={() => { setEditingOrder(o); setOrderForm(o); setIsOrderModalOpen(true); }} className="p-4 bg-slate-50 text-slate-400 rounded-2xl hover:bg-indigo-50 hover:text-indigo-600 transition-all"><Edit3Icon size={20}/></button>
+                              <button onClick={() => askConfirmation("Borrar Pedido", `¿Eliminar pedido #${o.orderNumber}?`, () => updateData('orders', appData.orders.filter(ord => ord.id !== o.id)))} className="p-4 bg-white border border-slate-100 text-slate-200 hover:text-rose-500 rounded-xl transition-all"><TrashIcon size={18}/></button>
                            </div>
                         </div>
                      </div>
@@ -612,7 +599,6 @@ const App: React.FC = () => {
            </div>
         )}
 
-        {/* CLIENTES */}
         {activeTab === 'clientes' && (
            <div className="space-y-10 animate-in fade-in duration-500">
               <div className="flex flex-col md:flex-row items-center justify-between gap-8 bg-white p-8 rounded-[3rem] shadow-sm border border-slate-200">
@@ -622,7 +608,6 @@ const App: React.FC = () => {
                  </div>
                  <button onClick={() => { setClientForm({name: '', phone: '', address: ''}); setIsClientModalOpen(true); }} className="bg-slate-900 text-white px-10 py-5 rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-xl flex items-center gap-3 hover:bg-slate-800 transition-all"><PlusIcon size={16}/> Nuevo Cliente</button>
               </div>
-
               <div className="bg-white rounded-[3.5rem] border border-slate-200 overflow-hidden shadow-2xl">
                  <table className="w-full text-left">
                     <thead className="bg-slate-50/80 border-b border-slate-100">
@@ -645,18 +630,12 @@ const App: React.FC = () => {
                                   </div>
                                </div>
                             </td>
-                            <td className="px-10 py-8 font-black text-slate-600 text-sm flex items-center gap-2">
-                                <PhoneIcon size={14} className="text-emerald-500"/>
-                                {c.phone}
-                            </td>
-                            <td className="px-10 py-8 font-bold text-slate-400 text-xs uppercase flex items-center gap-2">
-                                <MapPinIcon size={14} className="text-slate-300"/>
-                                {c.address || 'Ubicación no cargada'}
-                            </td>
+                            <td className="px-10 py-8 font-black text-slate-600 text-sm">{c.phone}</td>
+                            <td className="px-10 py-8 font-bold text-slate-400 text-xs uppercase">{c.address || 'Sin dirección'}</td>
                             <td className="px-10 py-8 text-right">
                                <div className="flex justify-end gap-3 opacity-0 group-hover:opacity-100 transition-all">
                                   <button onClick={() => { setClientForm(c); setIsClientModalOpen(true); }} className="p-4 bg-indigo-50 text-indigo-600 rounded-2xl hover:bg-indigo-600 hover:text-white transition-all"><Edit3Icon size={18}/></button>
-                                  <button onClick={() => askConfirmation("Borrar Cliente", `¿Seguro que deseas eliminar a ${c.name}?`, () => updateData('clients', appData.clients.filter(cl => cl.id !== c.id)))} className="p-4 bg-white border border-slate-100 text-slate-200 hover:text-rose-500 rounded-xl transition-all active:scale-90"><TrashIcon size={18}/></button>
+                                  <button onClick={() => askConfirmation("Borrar Cliente", `¿Eliminar a ${c.name}?`, () => updateData('clients', appData.clients.filter(cl => cl.id !== c.id)))} className="p-4 bg-white border border-slate-100 text-slate-200 hover:text-rose-500 rounded-xl transition-all"><TrashIcon size={18}/></button>
                                </div>
                             </td>
                          </tr>
@@ -667,56 +646,53 @@ const App: React.FC = () => {
            </div>
         )}
 
-        {/* CONFIGURACIÓN */}
         {activeTab === 'config' && (
            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 animate-in fade-in duration-500 pb-16">
               <section className="bg-white rounded-[3rem] p-8 border border-slate-200 shadow-sm">
                  <div className="flex items-center justify-between mb-8">
                     <h2 className="text-slate-900 font-black text-sm uppercase tracking-widest flex items-center gap-3"><TagIcon className="text-indigo-600" size={18}/> Categorías</h2>
-                    <button onClick={() => updateData('categories', [...appData.categories, { id: Date.now().toString(), name: 'Nueva', pricePerUnit: 0 }])} className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl hover:bg-indigo-600 hover:text-white transition-all"><PlusIcon size={18}/></button>
+                    <button onClick={() => updateData('categories', [...appData.categories, { id: Date.now().toString(), name: 'Nueva', pricePerUnit: 0 }])} className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl hover:bg-indigo-600 transition-all"><PlusIcon size={18}/></button>
                  </div>
                  <div className="space-y-4">
                     {appData.categories.map((cat, idx) => (
                       <div key={cat.id} className="flex items-center gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-100 group">
                          <input type="text" value={cat.name} onChange={e => { const nc = [...appData.categories]; nc[idx].name = e.target.value; updateData('categories', nc); }} className="flex-1 bg-transparent font-black text-[10px] uppercase outline-none" />
                          <div className="flex items-center gap-1 font-black text-indigo-600 text-xs">$ <input type="number" value={cat.pricePerUnit} onChange={e => { const nc = [...appData.categories]; nc[idx].pricePerUnit = Number(e.target.value); updateData('categories', nc); }} className="w-16 bg-transparent text-right outline-none" /></div>
-                         <button onClick={() => askConfirmation("Borrar Categoría", "¿Deseas eliminar esta categoría de precios?", () => updateData('categories', appData.categories.filter(c => c.id !== cat.id)))} className="text-slate-200 hover:text-rose-500 transition-all opacity-0 group-hover:opacity-100"><TrashIcon size={16}/></button>
+                         <button onClick={() => askConfirmation("Borrar Categoría", "¿Deseas eliminar esta categoría?", () => updateData('categories', appData.categories.filter(c => c.id !== cat.id)))} className="text-slate-200 hover:text-rose-500 transition-all opacity-0 group-hover:opacity-100"><TrashIcon size={16}/></button>
                       </div>
                     ))}
                  </div>
               </section>
-
               <section className="bg-white rounded-[3rem] p-8 border border-slate-200 shadow-sm">
                  <div className="flex items-center justify-between mb-8">
-                    <h2 className="text-slate-900 font-black text-sm uppercase tracking-widest flex items-center gap-3"><LayersIcon className="text-indigo-600" size={18}/> Tarifas Producción</h2>
+                    <h2 className="text-slate-900 font-black text-sm uppercase tracking-widest flex items-center gap-3"><LayersIcon className="text-indigo-600" size={18}/> Tarifas Prod.</h2>
                     <button onClick={() => updateData('costTiers', [...appData.costTiers, { id: Date.now().toString(), minLargo: 0, maxLargo: 0, precioPorCm: 0 }])} className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl transition-all"><PlusIcon size={18}/></button>
                  </div>
                  <div className="space-y-3">
                     {appData.costTiers.map((tier, idx) => (
                       <div key={tier.id} className="flex gap-2 items-center bg-slate-50 p-3 rounded-2xl border border-slate-100 group">
-                         <input type="number" value={tier.minLargo} onChange={e => { const nt = [...appData.costTiers]; nt[idx].minLargo = Number(e.target.value); updateData('costTiers', nt); }} className="w-12 bg-white border border-slate-200 rounded p-1.5 text-[10px] font-black text-center" />
+                         <input type="number" value={tier.minLargo} onChange={e => { const nt = [...appData.costTiers]; nt[idx].minLargo = Number(e.target.value); updateData('costTiers', nt); }} className="w-12 bg-white border border-slate-200 rounded p-1 text-[10px] font-black text-center" />
                          <span className="text-slate-300 font-black">→</span>
-                         <input type="number" value={tier.maxLargo} onChange={e => { const nt = [...appData.costTiers]; nt[idx].maxLargo = Number(e.target.value); updateData('costTiers', nt); }} className="w-12 bg-white border border-slate-200 rounded p-1.5 text-[10px] font-black text-center" />
+                         <input type="number" value={tier.maxLargo} onChange={e => { const nt = [...appData.costTiers]; nt[idx].maxLargo = Number(e.target.value); updateData('costTiers', nt); }} className="w-12 bg-white border border-slate-200 rounded p-1 text-[10px] font-black text-center" />
                          <div className="flex-1 text-right font-black text-indigo-600 text-xs">$ <input type="number" value={tier.precioPorCm} onChange={e => { const nt = [...appData.costTiers]; nt[idx].precioPorCm = Number(e.target.value); updateData('costTiers', nt); }} className="w-16 bg-transparent text-right outline-none" /></div>
-                         <button onClick={() => askConfirmation("Borrar Tarifa", "¿Eliminar esta escala de precios de producción?", () => updateData('costTiers', appData.costTiers.filter(t => t.id !== tier.id)))} className="text-slate-200 hover:text-rose-500 transition-all opacity-0 group-hover:opacity-100"><TrashIcon size={16}/></button>
+                         <button onClick={() => askConfirmation("Borrar Tarifa", "¿Eliminar escala de producción?", () => updateData('costTiers', appData.costTiers.filter(t => t.id !== tier.id)))} className="text-slate-200 hover:text-rose-500 transition-all opacity-0 group-hover:opacity-100"><TrashIcon size={16}/></button>
                       </div>
                     ))}
                  </div>
               </section>
-
               <section className="bg-white rounded-[3rem] p-8 border border-slate-200 shadow-sm flex flex-col">
                  <div className="flex items-center justify-between mb-8">
-                    <h2 className="text-slate-900 font-black text-sm uppercase tracking-widest flex items-center gap-3"><PercentIcon className="text-indigo-600" size={18}/> Descuentos Cantidad</h2>
+                    <h2 className="text-slate-900 font-black text-sm uppercase tracking-widest flex items-center gap-3"><PercentIcon className="text-indigo-600" size={18}/> Descuentos</h2>
                     <button onClick={() => updateData('quantityDiscounts', [...appData.quantityDiscounts, { id: Date.now().toString(), minQty: 0, maxQty: 0, discountPercent: 0 }])} className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl transition-all"><PlusIcon size={18}/></button>
                  </div>
                  <div className="space-y-3 flex-1">
                     {appData.quantityDiscounts.map((disc, idx) => (
                       <div key={disc.id} className="flex gap-2 items-center bg-slate-50 p-3 rounded-2xl border border-slate-100 group">
-                         <input type="number" placeholder="Min" value={disc.minQty} onChange={e => { const nd = [...appData.quantityDiscounts]; nd[idx].minQty = Number(e.target.value); updateData('quantityDiscounts', nd); }} className="w-12 bg-white border border-slate-200 rounded p-1.5 text-[10px] font-black text-center" />
+                         <input type="number" placeholder="Min" value={disc.minQty} onChange={e => { const nd = [...appData.quantityDiscounts]; nd[idx].minQty = Number(e.target.value); updateData('quantityDiscounts', nd); }} className="w-12 bg-white border border-slate-200 rounded p-1 text-[10px] font-black text-center" />
                          <span className="text-slate-300 font-black">→</span>
-                         <input type="number" placeholder="Max" value={disc.maxQty} onChange={e => { const nd = [...appData.quantityDiscounts]; nd[idx].maxQty = Number(e.target.value); updateData('quantityDiscounts', nd); }} className="w-12 bg-white border border-slate-200 rounded p-1.5 text-[10px] font-black text-center" />
+                         <input type="number" placeholder="Max" value={disc.maxQty} onChange={e => { const nd = [...appData.quantityDiscounts]; nd[idx].maxQty = Number(e.target.value); updateData('quantityDiscounts', nd); }} className="w-12 bg-white border border-slate-200 rounded p-1 text-[10px] font-black text-center" />
                          <div className="flex-1 text-right font-black text-emerald-600 text-xs"><input type="number" placeholder="%" value={disc.discountPercent} onChange={e => { const nd = [...appData.quantityDiscounts]; nd[idx].discountPercent = Number(e.target.value); updateData('quantityDiscounts', nd); }} className="w-12 bg-transparent text-right outline-none" /> %</div>
-                         <button onClick={() => askConfirmation("Borrar Descuento", "¿Eliminar esta regla de descuento?", () => updateData('quantityDiscounts', appData.quantityDiscounts.filter(d => d.id !== disc.id)))} className="text-slate-200 hover:text-rose-500 transition-all opacity-0 group-hover:opacity-100"><TrashIcon size={16}/></button>
+                         <button onClick={() => askConfirmation("Borrar Descuento", "¿Eliminar regla de descuento?", () => updateData('quantityDiscounts', appData.quantityDiscounts.filter(d => d.id !== disc.id)))} className="text-slate-200 hover:text-rose-500 transition-all opacity-0 group-hover:opacity-100"><TrashIcon size={16}/></button>
                       </div>
                     ))}
                  </div>
@@ -732,8 +708,16 @@ const App: React.FC = () => {
       {isAuthModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex items-center justify-center p-6 animate-in fade-in duration-300">
            <div className="bg-white w-full max-w-sm rounded-[3rem] p-10 shadow-2xl relative">
-              <button onClick={() => setIsAuthModalOpen(false)} className="absolute top-8 right-8 text-slate-300 hover:text-slate-900 transition-all active:scale-125"><XIcon size={24}/></button>
-              <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter mb-8 flex items-center gap-3"><CloudIcon className="text-indigo-600"/> Cuenta Taller</h2>
+              <button onClick={() => setIsAuthModalOpen(false)} className="absolute top-8 right-8 text-slate-300 hover:text-slate-900 transition-all"><XIcon size={24}/></button>
+              <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter mb-4 flex items-center gap-3"><CloudIcon className="text-indigo-600"/> Cuenta Taller</h2>
+              
+              <div className="bg-amber-50 p-4 rounded-xl border border-amber-100 flex gap-3 mb-6">
+                 <ClockIcon size={20} className="text-amber-600 shrink-0"/>
+                 <p className="text-[10px] text-amber-800 font-bold leading-tight uppercase">
+                    Si recibes un error de "Límite Excedido", espera 10 minutos para volver a intentar. Es una protección automática del servidor.
+                 </p>
+              </div>
+
               <form onSubmit={handleAuth} className="space-y-5">
                  <div className="space-y-2">
                     <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Email del Taller</label>
@@ -751,7 +735,7 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL PEDIDO */}
+      {/* MODALES ADICIONALES (Order, Client, Confirm, Summary) */}
       {isOrderModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4 animate-in fade-in duration-300">
            <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl relative border border-slate-200">
@@ -763,23 +747,21 @@ const App: React.FC = () => {
                  <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1">
                       <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Nº Pedido</label>
-                      <input type="text" value={orderForm.orderNumber} onChange={e => setOrderForm({...orderForm, orderNumber: e.target.value})} className="w-full bg-slate-50 border-2 border-slate-200 rounded-xl p-3 font-black outline-none" />
+                      <input type="text" value={orderForm.orderNumber} onChange={e => setOrderForm({...orderForm, orderNumber: e.target.value})} className="w-full bg-slate-50 border-2 border-slate-200 rounded-xl p-3 font-black outline-none focus:border-indigo-500" />
                     </div>
                     <div className="space-y-1">
                       <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Estado</label>
-                      <select value={orderForm.statusId} onChange={e => setOrderForm({...orderForm, statusId: e.target.value})} className="w-full bg-slate-50 border-2 border-slate-200 rounded-xl p-3 font-black outline-none appearance-none">
+                      <select value={orderForm.statusId} onChange={e => setOrderForm({...orderForm, statusId: e.target.value})} className="w-full bg-slate-50 border-2 border-slate-200 rounded-xl p-3 font-black outline-none">
                         {appData.statuses.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                       </select>
                     </div>
                  </div>
-                 
                  <div className="space-y-1">
                     <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Cliente</label>
-                    <select value={orderForm.clientId} onChange={e => setOrderForm({...orderForm, clientId: e.target.value})} className="w-full bg-slate-50 border-2 border-slate-200 rounded-xl p-3 font-black outline-none appearance-none">
+                    <select value={orderForm.clientId} onChange={e => setOrderForm({...orderForm, clientId: e.target.value})} className="w-full bg-slate-50 border-2 border-slate-200 rounded-xl p-3 font-black outline-none focus:border-indigo-500">
                       {appData.clients.length === 0 ? <option>Registra un cliente</option> : appData.clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
                  </div>
-                 
                  <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1">
                       <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Medidas (cm)</label>
@@ -794,7 +776,6 @@ const App: React.FC = () => {
                       <input type="number" value={orderForm.quantity || ''} onChange={e => setOrderForm({...orderForm, quantity: Number(e.target.value)})} className="w-full bg-slate-50 border-2 border-slate-200 rounded-xl p-3 font-black text-center" />
                     </div>
                  </div>
-
                  <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1">
                       <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Categoría</label>
@@ -807,17 +788,15 @@ const App: React.FC = () => {
                       <input type="number" value={orderForm.deposit || ''} onChange={e => setOrderForm({...orderForm, deposit: Number(e.target.value)})} className="w-full bg-emerald-50 border-2 border-emerald-100 rounded-xl p-3 font-black text-emerald-700 outline-none" />
                     </div>
                  </div>
-                 
                  <div className="pt-6 flex gap-3">
-                    <button onClick={() => setIsOrderModalOpen(false)} className="flex-1 py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest text-slate-400 hover:bg-slate-50 transition-all">Cancelar</button>
-                    <button onClick={saveOrder} className="flex-[2] py-4 rounded-2xl bg-indigo-600 text-white font-black text-[11px] uppercase tracking-[0.2em] shadow-xl hover:bg-indigo-700 transition-all active:scale-95">Guardar Pedido</button>
+                    <button onClick={() => setIsOrderModalOpen(false)} className="flex-1 py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest text-slate-400 hover:bg-slate-50">Cancelar</button>
+                    <button onClick={saveOrder} className="flex-[2] py-4 rounded-2xl bg-indigo-600 text-white font-black text-[11px] uppercase tracking-widest shadow-xl hover:bg-indigo-700 transition-all active:scale-95">Guardar Pedido</button>
                  </div>
               </div>
            </div>
         </div>
       )}
 
-      {/* SUMMARY MODAL */}
       {showSummary && (
         <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-xl z-[200] flex items-center justify-center p-6 animate-in zoom-in duration-300">
            <div className="bg-white w-full max-w-sm rounded-[3rem] p-10 shadow-2xl relative flex flex-col items-center text-center overflow-hidden" ref={ticketRef}>
@@ -837,13 +816,11 @@ const App: React.FC = () => {
 
               <div className="flex flex-col gap-3 w-full">
                   <button onClick={() => shareToWA(showSummary)} className="w-full bg-emerald-500 text-white py-5 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-3 shadow-xl hover:bg-emerald-600 transition-all active:scale-95"><MessageCircleIcon size={18}/> Enviar WhatsApp</button>
-                  <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest italic opacity-60">¡Captura pantalla para compartir!</p>
               </div>
            </div>
         </div>
       )}
-      
-      {/* CLIENT MODAL */}
+
       {isClientModalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-6 animate-in fade-in duration-300">
            <div className="bg-white w-full max-w-md rounded-[3.5rem] p-12 shadow-2xl relative overflow-hidden">
@@ -864,7 +841,6 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* CONFIRM MODAL */}
       {confirmModal && (
         <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-[300] flex items-center justify-center p-6 animate-in fade-in duration-200">
            <div className="bg-white w-full max-sm rounded-[2.5rem] p-8 shadow-2xl text-center border border-rose-100">
