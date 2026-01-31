@@ -1,9 +1,10 @@
+
 import { DesignItem, PackedDesign } from '../types';
 
 /**
- * Packs designs using an advanced Skyline algorithm optimized for minimum length.
- * For each item, it dynamically tries both orientations and chooses the one
- * that results in the lowest possible top edge (Y + Height).
+ * Empaqueta diseños usando un algoritmo de Skyline optimizado para longitud mínima.
+ * Para cada ítem, intenta dinámicamente ambas orientaciones y elige la que resulta
+ * en el borde superior más bajo (Y + Alto).
  */
 export const packDesigns = (
   items: DesignItem[],
@@ -14,19 +15,25 @@ export const packDesigns = (
 
   const individualUnits: Omit<PackedDesign, 'x' | 'y' | 'rotated'>[] = [];
   items.forEach(item => {
-    // If neither side fits the sheet, we skip it
-    if (item.width > sheetWidth && item.height > sheetWidth) return;
+    const w = Number(item.width);
+    const h = Number(item.height);
+    const q = Number(item.quantity);
 
-    for (let i = 0; i < item.quantity; i++) {
+    if (w <= 0 || h <= 0) return;
+    if (w > sheetWidth && h > sheetWidth) return;
+
+    for (let i = 0; i < q; i++) {
       individualUnits.push({
         ...item,
+        width: w,
+        height: h,
+        quantity: 1,
         id: `${item.id}-${i}`,
         originalId: item.id,
       });
     }
   });
 
-  // Sorting by the largest dimension helps in creating a more stable base for the packing
   individualUnits.sort((a, b) => Math.max(b.width, b.height) - Math.max(a.width, a.height));
 
   let skyline = [{ x: 0, y: 0, width: sheetWidth }];
@@ -42,7 +49,6 @@ export const packDesigns = (
     let bestChoice: { x: number, y: number, w: number, h: number, rotated: boolean, skylineIndex: number } | null = null;
     let minTopEdge = Infinity;
 
-    // Evaluate both orientations to find which one results in the smallest local length increase
     orientations.forEach(orient => {
       const w = orient.w;
       const h = orient.h;
@@ -63,7 +69,6 @@ export const packDesigns = (
 
         if (possible) {
           const topEdge = maxYInRange + h;
-          // Priority 1: Lowest top edge. Priority 2: Lowest X (to stay left)
           if (topEdge < minTopEdge - 0.0001 || (Math.abs(topEdge - minTopEdge) < 0.0001 && skyline[i].x < (bestChoice?.x ?? Infinity))) {
             minTopEdge = topEdge;
             bestChoice = { 
@@ -89,14 +94,14 @@ export const packDesigns = (
         width: w,
         height: h,
         rotated,
-      });
+        id: unit.id,
+        originalId: unit.originalId
+      } as PackedDesign);
       
-      totalAreaUsed += w * h;
+      totalAreaUsed += (w * h);
 
-      // Update skyline
       const widthToOccupy = Math.min(w + spacing, sheetWidth - x);
       const newHeight = y + h + spacing;
-
       const newSegment = { x, y: newHeight, width: widthToOccupy };
 
       let consumedWidth = 0;
@@ -114,7 +119,6 @@ export const packDesigns = (
       
       skyline.splice(skylineIndex, 0, newSegment);
 
-      // Merge redundant segments
       for (let k = 0; k < skyline.length - 1; k++) {
         if (Math.abs(skyline[k].y - skyline[k+1].y) < 0.0001) {
           skyline[k].width += skyline[k+1].width;
