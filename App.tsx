@@ -1,10 +1,9 @@
 
-import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { 
   PlusIcon, 
   TrashIcon, 
   Settings2Icon, 
-  LayoutIcon, 
   CalculatorIcon, 
   TagIcon, 
   LayersIcon, 
@@ -20,7 +19,12 @@ import {
   PhoneIcon,
   MapPinIcon,
   PercentIcon,
-  AlertTriangleIcon
+  AlertTriangleIcon,
+  LogInIcon,
+  LogOutIcon,
+  UserIcon,
+  Loader2Icon,
+  DatabaseIcon
 } from 'lucide-react';
 import { 
   DesignItem, 
@@ -34,6 +38,7 @@ import {
   Order
 } from './types';
 import { packDesigns } from './utils/layout';
+import { supabase } from './supabaseClient';
 
 const DESIGN_COLORS = [
   { bg: 'bg-indigo-500', text: 'text-white', border: 'border-indigo-600' },
@@ -42,8 +47,6 @@ const DESIGN_COLORS = [
   { bg: 'bg-amber-400', text: 'text-amber-950', border: 'border-amber-500' },
   { bg: 'bg-violet-500', text: 'text-white', border: 'border-violet-600' },
 ];
-
-const MASTER_KEY = 'graficapro_enterprise_v11';
 
 const DEFAULT_CATEGORIES: Category[] = [
   { id: '1', name: 'DE STOCK', pricePerUnit: 100 },
@@ -82,34 +85,96 @@ type AppDataType = typeof DEFAULT_DATA;
 type Tab = 'dash' | 'presupuestar' | 'pedidos' | 'clientes' | 'config';
 
 const App: React.FC = () => {
+  const [session, setSession] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<Tab>('dash');
-  const [appData, setAppData] = useState<AppDataType>(() => {
-    try {
-      const saved = localStorage.getItem(MASTER_KEY);
-      if (saved) return { ...DEFAULT_DATA, ...JSON.parse(saved) };
-    } catch (e) { console.warn(e); }
-    return DEFAULT_DATA;
-  });
-
+  const [appData, setAppData] = useState<AppDataType>(DEFAULT_DATA);
   const [lastSaved, setLastSaved] = useState<string>('');
-  const [showSummary, setShowSummary] = useState<Order | null>(null);
-  const [confirmModal, setConfirmModal] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
-  const ticketRef = useRef<HTMLDivElement>(null);
+  
+  // Auth Form State
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [authError, setAuthError] = useState('');
+
+  // Check if Supabase is configured
+  const isSupabaseConfigured = !!(import.meta as any).env?.VITE_SUPABASE_URL;
 
   useEffect(() => {
-    localStorage.setItem(MASTER_KEY, JSON.stringify(appData));
-    setLastSaved(new Date().toLocaleTimeString());
-  }, [appData]);
+    if (!isSupabaseConfigured) {
+      setLoading(false);
+      return;
+    }
 
-  const updateData = (field: keyof AppDataType, value: any) => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      if (session) fetchAllData(session.user.id);
+      setLoading(false);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      if (session) fetchAllData(session.user.id);
+      else setAppData(DEFAULT_DATA);
+    });
+
+    return () => subscription.unsubscribe();
+  }, [isSupabaseConfigured]);
+
+  const fetchAllData = async (userId: string) => {
+    setLoading(true);
+    try {
+      const [{ data: setts }, { data: cls }, { data: cats }, { data: ords }] = await Promise.all([
+        supabase.from('settings').select('*').eq('user_id', userId).maybeSingle(),
+        supabase.from('clients').select('*').eq('user_id', userId),
+        supabase.from('categories').select('*').eq('user_id', userId),
+        supabase.from('orders').select('*').eq('user_id', userId).order('created_at', { ascending: false })
+      ]);
+
+      setAppData(prev => ({
+        ...prev,
+        sheetWidth: setts?.sheet_width || 58,
+        profitMargin: setts?.profit_margin || 100,
+        designSpacing: setts?.design_spacing || 0.2,
+        clients: cls || [],
+        categories: cats?.length ? cats : DEFAULT_CATEGORIES,
+        orders: ords || [],
+      }));
+      setLastSaved(new Date().toLocaleTimeString());
+    } catch (e) { console.error("Error cargando datos:", e); }
+    setLoading(false);
+  };
+
+  const updateData = async (field: keyof AppDataType, value: any) => {
     setAppData(prev => ({ ...prev, [field]: value }));
+    if (!session) return;
+    const userId = session.user.id;
+
+    if (field === 'sheetWidth' || field === 'profitMargin' || field === 'designSpacing') {
+      await supabase.from('settings').upsert({ 
+        user_id: userId, 
+        sheet_width: field === 'sheetWidth' ? value : appData.sheetWidth,
+        profit_margin: field === 'profitMargin' ? value : appData.profitMargin,
+        design_spacing: field === 'designSpacing' ? value : appData.designSpacing,
+        updated_at: new Date().toISOString()
+      });
+    }
+    setLastSaved(new Date().toLocaleTimeString());
   };
 
-  const askConfirmation = (title: string, message: string, onConfirm: () => void) => {
-    setConfirmModal({ title, message, onConfirm });
+  const handleAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    setLoading(true);
+    const { error } = isRegistering 
+      ? await supabase.auth.signUp({ email: authEmail, password: authPassword })
+      : await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword });
+    
+    if (error) setAuthError(error.message);
+    setLoading(false);
   };
 
-  // --- CALCULADORA (SECCIÓN BLINDADA) ---
+  // --- CALCULADORA LOGIC ---
   const [newDesign, setNewDesign] = useState<Omit<DesignItem, 'id'>>({ name: '', width: 0, height: 0, quantity: 1 });
   const PREVIEW_SCALE = 6;
 
@@ -147,97 +212,122 @@ const App: React.FC = () => {
     }, { totalQty: 0, unitCostoSum: 0, unitVentaSum: 0, costoTotal: 0, ventaTotal: 0 });
   }, [appData.designs, calculateDetails]);
 
-  const addDesign = () => {
-    if (newDesign.width <= 0 || newDesign.height <= 0 || newDesign.quantity <= 0) return;
-    const item: DesignItem = {
-      ...newDesign,
-      name: newDesign.name || 'S/N',
-      id: Date.now().toString(),
-    };
-    updateData('designs', [...appData.designs, item]);
-    setNewDesign({ name: '', width: 0, height: 0, quantity: 1 });
-  };
-
-  const getColorForDesign = (originalId: string) => {
-    const index = appData.designs.findIndex(d => d.id === originalId);
-    return index !== -1 ? DESIGN_COLORS[index % DESIGN_COLORS.length] : DESIGN_COLORS[0];
-  };
-
-  // --- PEDIDOS ---
+  // --- MODALS & SEARCH ---
   const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
-  const [editingOrder, setEditingOrder] = useState<Order | null>(null);
-  const [orderSearch, setOrderSearch] = useState('');
-  const [orderStatusFilter, setOrderStatusFilter] = useState('all');
+  const [isClientModalOpen, setIsClientModalOpen] = useState(false);
   const [orderForm, setOrderForm] = useState<Partial<Order>>({});
+  const [clientForm, setClientForm] = useState<Partial<Client>>({});
+  const [orderSearch, setOrderSearch] = useState('');
+  const [clientSearch, setClientSearch] = useState('');
 
-  const handleOpenNewOrder = () => {
-    setEditingOrder(null);
-    setOrderForm({
-      orderNumber: (appData.orders.length + 1).toString().padStart(4, '0'),
-      clientId: appData.clients[0]?.id || '',
-      categoryId: appData.categories[0]?.id || '1',
-      quantity: 1,
-      width: 0,
-      height: 0,
-      deposit: 0,
-      statusId: 'hacer'
-    });
-    setIsOrderModalOpen(true);
-  };
-
-  const saveOrder = () => {
+  const saveOrder = async () => {
+    if (!session || !orderForm.clientId || !orderForm.categoryId) return;
     const category = appData.categories.find(c => c.id === orderForm.categoryId);
     const totalPrice = (category?.pricePerUnit || 0) * (orderForm.quantity || 0);
     const deposit = orderForm.deposit || 0;
     const balance = totalPrice - deposit;
-    if (editingOrder) {
-      updateData('orders', appData.orders.map(o => o.id === editingOrder.id ? { ...o, ...orderForm, totalPrice, balance } as Order : o));
-    } else {
-      updateData('orders', [...appData.orders, { ...orderForm, id: Date.now().toString(), totalPrice, balance, createdAt: Date.now() } as Order]);
+    
+    const orderData = { 
+      ...orderForm, 
+      user_id: session.user.id, 
+      totalPrice, 
+      balance,
+      orderNumber: orderForm.orderNumber || `TK-${Date.now().toString().slice(-6)}`,
+      statusId: orderForm.statusId || 'hacer'
+    };
+    
+    const { data, error } = await supabase.from('orders').upsert(orderData).select().single();
+    if (!error) {
+      const updatedOrders = orderForm.id 
+        ? appData.orders.map(o => o.id === data.id ? data : o)
+        : [data, ...appData.orders];
+      updateData('orders', updatedOrders);
+      setIsOrderModalOpen(false);
     }
-    setIsOrderModalOpen(false);
   };
 
-  const filteredOrders = useMemo(() => {
-    return appData.orders.filter(o => {
-      const client = appData.clients.find(c => c.id === o.clientId);
-      const matchesText = client?.name.toLowerCase().includes(orderSearch.toLowerCase()) || o.orderNumber.includes(orderSearch);
-      const matchesStatus = orderStatusFilter === 'all' || o.statusId === orderStatusFilter;
-      return matchesText && matchesStatus;
-    }).sort((a, b) => b.createdAt - a.createdAt);
-  }, [appData.orders, appData.clients, orderSearch, orderStatusFilter]);
+  const saveClient = async () => {
+    if (!session || !clientForm.name) return;
+    const clientData = { ...clientForm, user_id: session.user.id };
+    const { data, error } = await supabase.from('clients').upsert(clientData).select().single();
+    if (!error) {
+      const updatedClients = clientForm.id 
+        ? appData.clients.map(c => c.id === data.id ? data : c)
+        : [...appData.clients, data];
+      updateData('clients', updatedClients);
+      setIsClientModalOpen(false);
+    }
+  };
 
-  // --- CLIENTES ---
-  const [isClientModalOpen, setIsClientModalOpen] = useState(false);
-  const [clientForm, setClientForm] = useState<Partial<Client>>({ name: '', phone: '', address: '' });
-  const [clientSearch, setClientSearch] = useState('');
+  const deleteOrder = async (id: string) => {
+    const { error } = await supabase.from('orders').delete().eq('id', id);
+    if (!error) updateData('orders', appData.orders.filter(o => o.id !== id));
+  };
 
-  const filteredClients = useMemo(() => {
-    return appData.clients.filter(c => 
-      c.name.toLowerCase().includes(clientSearch.toLowerCase()) || 
-      c.phone.includes(clientSearch)
+  const deleteClient = async (id: string) => {
+    const { error } = await supabase.from('clients').delete().eq('id', id);
+    if (!error) updateData('clients', appData.clients.filter(c => c.id !== id));
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center flex-col gap-4">
+        <Loader2Icon className="text-indigo-600 animate-spin" size={48} />
+        <p className="font-black text-[10px] uppercase tracking-widest text-slate-400">Verificando conexión...</p>
+      </div>
     );
-  }, [appData.clients, clientSearch]);
+  }
 
-  const saveClient = () => {
-    if (!clientForm.name) return;
-    if (clientForm.id) {
-        updateData('clients', appData.clients.map(c => c.id === clientForm.id ? { ...c, ...clientForm } as Client : c));
-    } else {
-        updateData('clients', [...appData.clients, { ...clientForm, id: Date.now().toString(), createdAt: Date.now() } as Client]);
-    }
-    setClientForm({ name: '', phone: '', address: '' });
-    setIsClientModalOpen(false);
-  };
+  if (!isSupabaseConfigured) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 text-center">
+        <div className="bg-white max-w-md p-10 rounded-[2.5rem] shadow-xl border border-rose-100">
+          <div className="bg-rose-100 text-rose-600 p-4 rounded-3xl inline-block mb-6"><DatabaseIcon size={40}/></div>
+          <h1 className="text-2xl font-black text-slate-900 mb-4 tracking-tight">Faltan Variables de Entorno</h1>
+          <p className="text-slate-500 text-sm font-medium leading-relaxed mb-8">Debes configurar <code className="bg-slate-100 px-2 py-1 rounded font-bold">VITE_SUPABASE_URL</code> y <code className="bg-slate-100 px-2 py-1 rounded font-bold">VITE_SUPABASE_ANON_KEY</code> en el panel de Vercel.</p>
+          <button onClick={() => window.location.reload()} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-800 transition-all">Reintentar</button>
+        </div>
+      </div>
+    );
+  }
 
-  const shareToWA = (order: Order) => {
-    const client = appData.clients.find(c => c.id === order.clientId);
-    const phone = client?.phone.replace(/\D/g,'') || '';
-    // El nombre del cliente se extrae directamente tal cual está guardado en el sistema (client.name)
-    const clientName = client?.name || 'Cliente';
-    const text = `*CreaStickers - Ticket #${order.orderNumber}*\n\n*Cliente:* ${clientName}\n*Medida:* ${order.width}x${order.height} cm\n*Cantidad:* ${order.quantity}\n*Total:* $${order.totalPrice}\n*Seña:* $${order.deposit}\n*Restante:* $${order.balance}`;
-    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank');
-  };
+  if (!session) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+        <div className="bg-white w-full max-w-md rounded-[3rem] p-12 shadow-2xl border border-slate-200">
+           <div className="flex flex-col items-center mb-10 text-center">
+              <div className="bg-indigo-600 p-4 rounded-[2rem] text-white shadow-xl shadow-indigo-100 mb-6"><CalculatorIcon size={40}/></div>
+              <h1 className="text-3xl font-black text-slate-900 tracking-tighter">Crea<span className="text-indigo-600">Stickers</span></h1>
+              <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest mt-2">{isRegistering ? 'Registro de Empresa' : 'Acceso al Sistema Pro'}</p>
+           </div>
+           
+           <form onSubmit={handleAuth} className="space-y-6">
+              <div className="space-y-2">
+                 <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Email</label>
+                 <input type="email" required value={authEmail} onChange={e => setAuthEmail(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 font-bold outline-none focus:border-indigo-500 transition-all" />
+              </div>
+              <div className="space-y-2">
+                 <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Contraseña</label>
+                 <input type="password" required value={authPassword} onChange={e => setAuthPassword(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 font-bold outline-none focus:border-indigo-500 transition-all" />
+              </div>
+
+              {authError && <div className="bg-rose-50 text-rose-500 p-4 rounded-2xl text-xs font-bold border border-rose-100 text-center">{authError}</div>}
+
+              <button type="submit" className="w-full bg-indigo-600 text-white py-5 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all active:scale-95 flex items-center justify-center gap-3">
+                 {isRegistering ? <PlusIcon size={18}/> : <LogInIcon size={18}/>}
+                 {isRegistering ? 'Crear Cuenta' : 'Iniciar Sesión'}
+              </button>
+           </form>
+
+           <div className="mt-8 text-center">
+              <button onClick={() => { setIsRegistering(!isRegistering); setAuthError(''); }} className="text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-indigo-600 transition-colors">
+                 {isRegistering ? '¿Ya tienes cuenta? Entrar' : '¿Eres nuevo? Registrate'}
+              </button>
+           </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-700 pb-12">
@@ -248,435 +338,315 @@ const App: React.FC = () => {
             <h1 className="text-2xl font-black text-slate-900 tracking-tighter">Crea<span className="text-indigo-600">Stickers</span></h1>
           </div>
           
-          <nav className="flex items-center bg-slate-100 p-1.5 rounded-2xl border border-slate-200 shadow-inner">
-            <button onClick={() => setActiveTab('dash')} className={`px-5 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'dash' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Inicio</button>
-            <button onClick={() => setActiveTab('presupuestar')} className={`px-5 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'presupuestar' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Presupuestar</button>
-            <button onClick={() => setActiveTab('pedidos')} className={`px-5 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'pedidos' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Pedidos</button>
-            <button onClick={() => setActiveTab('clientes')} className={`px-5 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'clientes' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Clientes</button>
-            <button onClick={() => setActiveTab('config')} className={`px-5 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'config' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Ajustes</button>
+          <nav className="flex items-center bg-slate-100 p-1.5 rounded-2xl border border-slate-200 shadow-inner overflow-x-auto max-w-full">
+            <button onClick={() => setActiveTab('dash')} className={`px-5 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === 'dash' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Inicio</button>
+            <button onClick={() => setActiveTab('presupuestar')} className={`px-5 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === 'presupuestar' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Presupuestar</button>
+            <button onClick={() => setActiveTab('pedidos')} className={`px-5 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === 'pedidos' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Pedidos</button>
+            <button onClick={() => setActiveTab('clientes')} className={`px-5 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === 'clientes' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Clientes</button>
+            <button onClick={() => setActiveTab('config')} className={`px-5 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === 'config' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Config</button>
           </nav>
 
-          <div className="hidden lg:flex items-center gap-2 text-[11px] font-black text-emerald-500 uppercase bg-emerald-50 px-3 py-1.5 rounded-full">
-             <CheckCircle2Icon size={14}/> Sincronizado: {lastSaved}
+          <div className="flex items-center gap-4">
+             <div className="hidden lg:flex items-center gap-2 text-[11px] font-black text-emerald-500 uppercase bg-emerald-50 px-3 py-1.5 rounded-full">
+                <CheckCircle2Icon size={14}/> Sincronizado: {lastSaved}
+             </div>
+             <button onClick={() => supabase.auth.signOut()} className="p-2.5 bg-slate-100 text-slate-400 rounded-xl hover:bg-rose-50 hover:text-rose-500 transition-all"><LogOutIcon size={20}/></button>
           </div>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto p-6 md:p-10">
-        
         {activeTab === 'dash' && (
-           <div className="space-y-10 animate-in fade-in duration-500">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
-                 {appData.statuses.map(s => (
-                   <div key={s.id} className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm flex flex-col items-center hover:translate-y-[-4px] transition-transform">
-                      <div className={`w-4 h-4 rounded-full ${s.color} mb-4 shadow-sm`}></div>
-                      <div className="text-5xl font-black text-slate-900 mb-2 leading-none">{appData.orders.filter(o => o.statusId === s.id).length}</div>
-                      <div className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">{s.name}</div>
-                   </div>
-                 ))}
-              </div>
-           </div>
-        )}
-
-        {/* PRESUPUESTAR (BLINDADA) */}
-        {activeTab === 'presupuestar' && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 animate-in fade-in duration-500">
-            <div className="lg:col-span-4 space-y-8">
-              <section className="bg-white rounded-[2.5rem] p-10 border border-slate-200 shadow-sm">
-                <h2 className="text-slate-900 font-black text-sm uppercase tracking-widest flex items-center gap-3 mb-8"><Settings2Icon className="text-indigo-500" size={18}/> Configuración</h2>
-                <div className="space-y-6">
-                   <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Ancho Pliego</label><input type="number" value={appData.sheetWidth} onChange={e => updateData('sheetWidth', Number(e.target.value))} className="w-full bg-slate-50 rounded-2xl p-4 font-bold" /></div>
-                      <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Margen %</label><input type="number" value={appData.profitMargin} onChange={e => updateData('profitMargin', Number(e.target.value))} className="w-full bg-slate-50 rounded-2xl p-4 font-bold" /></div>
-                   </div>
-                   <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Espaciado (cm)</label><input type="number" step="0.1" value={appData.designSpacing} onChange={e => updateData('designSpacing', Number(e.target.value))} className="w-full bg-slate-50 rounded-2xl p-4 font-bold" /></div>
+          <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
+              {appData.statuses.map(s => (
+                <div key={s.id} className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm hover:shadow-md transition-all">
+                  <div className={`w-3 h-3 rounded-full ${s.color} mb-4`}></div>
+                  <div className="text-4xl font-black text-slate-900 mb-1">{appData.orders.filter(o => o.statusId === s.id).length}</div>
+                  <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{s.name}</div>
                 </div>
-              </section>
-              <section className="bg-white rounded-[2.5rem] p-10 border border-slate-200 shadow-sm">
-                <h2 className="text-indigo-600 font-black text-sm uppercase tracking-widest flex items-center gap-3 mb-8"><PlusIcon size={18}/> Agregar Diseño</h2>
-                <div className="space-y-6">
-                   <input type="text" placeholder="Nombre (opcional)..." value={newDesign.name} onChange={e => setNewDesign({...newDesign, name: e.target.value})} className="w-full bg-slate-50 rounded-2xl p-4 font-bold" />
-                   <div className="grid grid-cols-3 gap-3">
-                      <input type="number" placeholder="Ancho" value={newDesign.width || ''} onChange={e => setNewDesign({...newDesign, width: Number(e.target.value)})} className="bg-slate-50 rounded-2xl p-4 font-bold text-center" />
-                      <input type="number" placeholder="Alto" value={newDesign.height || ''} onChange={e => setNewDesign({...newDesign, height: Number(e.target.value)})} className="bg-slate-50 rounded-2xl p-4 font-bold text-center" />
-                      <input type="number" placeholder="Cant." value={newDesign.quantity || ''} onChange={e => setNewDesign({...newDesign, quantity: Number(e.target.value)})} className="bg-slate-50 rounded-2xl p-4 font-bold text-center" />
-                   </div>
-                   <button onClick={addDesign} className="w-full bg-indigo-600 text-white font-black py-5 rounded-2xl uppercase text-[11px] tracking-widest shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all active:scale-95">Optimizar Largo</button>
-                </div>
-              </section>
+              ))}
             </div>
-            
-            <div className="lg:col-span-8 space-y-10">
-               <section className="bg-white rounded-[3.5rem] p-12 border border-slate-200 shadow-sm">
-                  <div className="flex items-center justify-between mb-10">
-                    <h2 className="font-black text-2xl text-slate-900 tracking-tighter flex items-center gap-4"><LayoutIcon className="text-indigo-500" size={24}/> Distribución</h2>
-                    <div className="bg-slate-900 text-white px-6 py-2.5 rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-lg shadow-indigo-900/20">{packingResult.totalLength.toFixed(1)} cm largo</div>
-                  </div>
-                  <div className="bg-slate-950 rounded-[3rem] min-h-[450px] overflow-auto flex justify-center p-14 custom-scrollbar border-[12px] border-slate-900 shadow-2xl">
-                     {packingResult.totalLength > 0 ? (
-                        <div className="bg-white relative shadow-2xl" style={{ width: `${appData.sheetWidth * PREVIEW_SCALE}px`, height: `${packingResult.totalLength * PREVIEW_SCALE}px` }}>
-                          {packingResult.packed.map(p => {
-                            const color = getColorForDesign(p.originalId);
-                            return (
-                              <div key={p.id} className={`absolute border ${color.bg} ${color.border} ${color.text} flex items-center justify-center text-[7px] font-black overflow-hidden group transition-all`} style={{ left: `${p.x * PREVIEW_SCALE}px`, top: `${p.y * PREVIEW_SCALE}px`, width: `${p.width * PREVIEW_SCALE}px`, height: `${p.height * PREVIEW_SCALE}px` }}>
-                                 <span className="block text-center">{p.width}x{p.height}</span>
-                              </div>
-                            )
-                          })}
-                        </div>
-                     ) : <div className="text-slate-700 opacity-20 uppercase font-black tracking-[0.3em] flex flex-col items-center justify-center py-32"><LayoutIcon size={64} className="mb-6"/> Sin diseños</div>}
-                  </div>
-               </section>
 
-               <section className="bg-white rounded-[3.5rem] p-12 border border-slate-200 shadow-sm">
-                  <div className="overflow-x-auto custom-scrollbar">
-                    <table className="w-full text-left border-separate border-spacing-y-5">
-                      <thead>
-                        <tr className="text-slate-400 text-[11px] font-black uppercase tracking-widest">
-                          <th className="px-6 pb-2">Nombre</th>
-                          <th className="text-right pb-2">Costo Unit.</th>
-                          <th className="text-right pb-2">Precio Unit.</th>
-                          <th className="text-right pb-2">Costo Total</th>
-                          <th className="px-6 text-right pb-2">Venta Total</th>
+            <div className="bg-white rounded-[3rem] p-10 border border-slate-200 shadow-sm overflow-hidden relative">
+              <div className="absolute top-0 right-0 p-10 opacity-5 pointer-events-none"><PackageIcon size={120}/></div>
+              <div className="flex justify-between items-center mb-10">
+                <div>
+                  <h2 className="text-2xl font-black text-slate-900 tracking-tight">Últimos Pedidos</h2>
+                  <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1">Gestión en tiempo real</p>
+                </div>
+                <button onClick={() => setActiveTab('pedidos')} className="text-indigo-600 font-black text-[10px] uppercase tracking-widest bg-indigo-50 px-5 py-2.5 rounded-full hover:bg-indigo-100 transition-colors">Ver Todo</button>
+              </div>
+              
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead>
+                    <tr className="border-b border-slate-100">
+                      <th className="pb-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Nº Ticket</th>
+                      <th className="pb-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Cliente</th>
+                      <th className="pb-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Total</th>
+                      <th className="pb-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {appData.orders.slice(0, 5).map(o => {
+                      const client = appData.clients.find(c => c.id === o.clientId);
+                      const status = appData.statuses.find(s => s.id === o.statusId);
+                      return (
+                        <tr key={o.id} className="group hover:bg-slate-50 transition-colors">
+                          <td className="py-5 font-black text-slate-900 text-sm">#{o.orderNumber}</td>
+                          <td className="py-5">
+                            <div className="font-bold text-slate-700 text-sm">{client?.name || '---'}</div>
+                          </td>
+                          <td className="py-5 font-black text-indigo-600 text-sm">${o.totalPrice}</td>
+                          <td className="py-5">
+                            <span className={`${status?.color || 'bg-slate-200'} text-white px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest shadow-sm`}>{status?.name || '---'}</span>
+                          </td>
                         </tr>
-                      </thead>
-                      <tbody>
-                        {appData.designs.map(d => {
-                          const res = calculateDetails(d);
-                          return (
-                            <tr key={d.id} className="bg-slate-50 rounded-3xl group hover:bg-indigo-50/30 transition-all">
-                              <td className="py-6 px-8 rounded-l-[2rem]">
-                                 <div className="font-black text-slate-900 uppercase text-[12px] mb-1">{d.name || 'Sin nombre'}</div>
-                                 <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{d.width}x{d.height} CM • QTY: {d.quantity}</div>
-                              </td>
-                              <td className="text-right font-black text-rose-500 text-sm whitespace-nowrap">${res.unitProductionCost.toFixed(0)}</td>
-                              <td className="text-right font-black text-slate-900 text-sm whitespace-nowrap">${res.unitClientPrice.toFixed(0)}</td>
-                              <td className="text-right font-bold text-slate-400 text-sm whitespace-nowrap">${res.totalProductionCost.toFixed(0)}</td>
-                              <td className="py-6 px-8 text-right rounded-r-[2rem] font-black text-emerald-600 text-xl whitespace-nowrap">
-                                 ${res.totalClientPrice.toFixed(0)}
-                                 <button onClick={() => askConfirmation("Borrar Diseño", "¿Seguro que deseas quitar este diseño del presupuesto?", () => updateData('designs', appData.designs.filter(i => i.id !== d.id)))} className="ml-5 text-slate-300 hover:text-rose-500 transition-all opacity-0 group-hover:opacity-100"><TrashIcon size={18}/></button>
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                      <tfoot>
-                         <tr className="border-t-2 border-slate-100">
-                            <td className="px-8 py-8 font-black text-slate-400 uppercase tracking-widest text-[11px]">Totales ({totalsPresupuesto.totalQty} u.)</td>
-                            <td className="text-right px-4 font-black text-rose-500 text-sm whitespace-nowrap">${totalsPresupuesto.unitCostoSum.toFixed(0)}</td>
-                            <td className="text-right px-4 font-black text-slate-900 text-sm whitespace-nowrap">${totalsPresupuesto.unitVentaSum.toFixed(0)}</td>
-                            <td className="text-right px-4 font-black text-rose-500 text-lg whitespace-nowrap">${totalsPresupuesto.costoTotal.toLocaleString()}</td>
-                            <td className="text-right px-8 font-black text-emerald-600 text-3xl whitespace-nowrap">${totalsPresupuesto.ventaTotal.toLocaleString()}</td>
-                         </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-               </section>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}
 
-        {/* PEDIDOS */}
-        {activeTab === 'pedidos' && (
-           <div className="space-y-10 animate-in fade-in duration-500">
-              <div className="flex flex-col lg:flex-row items-center justify-between gap-8 bg-white p-8 rounded-[3rem] shadow-sm border border-slate-200">
-                 <div className="relative flex-1 w-full">
-                    <SearchIcon className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300" size={20}/>
-                    <input type="text" placeholder="Buscar pedido o cliente..." value={orderSearch} onChange={e => setOrderSearch(e.target.value)} className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-5 pl-16 pr-8 outline-none font-bold" />
-                 </div>
-                 <div className="flex items-center gap-3 w-full lg:w-auto overflow-x-auto pb-2">
-                    <button onClick={() => setOrderStatusFilter('all')} className={`px-6 py-3.5 rounded-xl text-[11px] font-black uppercase tracking-widest border transition-all ${orderStatusFilter === 'all' ? 'bg-slate-900 text-white shadow-lg' : 'bg-white text-slate-400 border-slate-200 hover:border-slate-400'}`}>Todos</button>
-                    {appData.statuses.map(s => <button key={s.id} onClick={() => setOrderStatusFilter(s.id)} className={`px-6 py-3.5 rounded-xl text-[11px] font-black uppercase tracking-widest border whitespace-nowrap transition-all ${orderStatusFilter === s.id ? 'bg-indigo-600 text-white shadow-lg' : 'bg-white text-slate-400 border-slate-200 hover:border-slate-400'}`}>{s.name}</button>)}
-                    <button onClick={handleOpenNewOrder} className="ml-6 bg-indigo-600 text-white px-10 py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-xl shadow-indigo-100 flex items-center gap-3 hover:bg-indigo-700 active:scale-95 transition-all"><PlusIcon size={16}/> Cargar Pedido</button>
-                 </div>
-              </div>
+        {activeTab === 'presupuestar' && (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-in fade-in duration-500">
+            <div className="lg:col-span-4 space-y-6">
+              <section className="bg-white rounded-[2.5rem] p-8 border border-slate-200 shadow-sm">
+                <h2 className="text-slate-900 font-black text-sm uppercase tracking-widest flex items-center gap-3 mb-8"><Settings2Icon className="text-indigo-500" size={18}/> Configuración</h2>
+                <div className="space-y-6">
+                   <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Ancho (cm)</label><input type="number" value={appData.sheetWidth} onChange={e => updateData('sheetWidth', Number(e.target.value))} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 font-bold outline-none" /></div>
+                      <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Margen %</label><input type="number" value={appData.profitMargin} onChange={e => updateData('profitMargin', Number(e.target.value))} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 font-bold outline-none" /></div>
+                   </div>
+                   <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Espaciado (cm)</label><input type="number" step="0.1" value={appData.designSpacing} onChange={e => updateData('designSpacing', Number(e.target.value))} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 font-bold outline-none" /></div>
+                </div>
+              </section>
 
-              <div className="grid gap-5">
-                 {filteredOrders.map(o => {
-                   const client = appData.clients.find(c => c.id === o.clientId);
-                   const status = appData.statuses.find(s => s.id === o.statusId);
-                   return (
-                     <div key={o.id} className="bg-white rounded-[2.5rem] p-8 border border-slate-200 shadow-sm flex flex-col md:flex-row items-center gap-10 group hover:border-indigo-300 transition-all hover:translate-x-1">
-                        <div className="flex-1 flex items-center gap-6 w-full">
-                           <div className={`w-16 h-16 rounded-3xl ${status?.color || 'bg-slate-400'} text-white flex flex-col items-center justify-center font-black text-[10px] shadow-xl`}>
-                              <span className="opacity-60 text-[8px] uppercase">ID</span>
-                              <span className="text-sm">#{o.orderNumber}</span>
-                           </div>
-                           <div>
-                              <div className="font-black text-slate-900 uppercase text-[15px] mb-1 leading-none">{client?.name || 'Cliente borrado'}</div>
-                              <div className="text-[11px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                                <span className={`px-2 py-0.5 rounded-full text-white text-[9px] ${status?.color || 'bg-slate-400'}`}>{status?.name || 'S/E'}</span>
-                                {o.width}x{o.height} cm • {o.quantity} u.
-                              </div>
-                           </div>
-                        </div>
-                        <div className="flex flex-wrap items-center justify-end gap-10 w-full md:w-auto text-right">
-                           <div className="min-w-[80px]"><div className="text-[10px] font-black text-slate-300 uppercase mb-1">Total</div><div className="font-black text-slate-900 text-lg">$ {o.totalPrice.toLocaleString()}</div></div>
-                           <div className="min-w-[80px]"><div className="text-[10px] font-black text-emerald-300 uppercase mb-1">Seña</div><div className="font-black text-emerald-600">$ {o.deposit.toLocaleString()}</div></div>
-                           <div className="min-w-[80px]"><div className="text-[10px] font-black text-rose-300 uppercase mb-1">Restante</div><div className="font-black text-rose-500 text-xl font-black">$ {o.balance.toLocaleString()}</div></div>
-                           <div className="flex gap-3">
-                              <button onClick={() => setShowSummary(o)} className="p-4 bg-slate-50 text-slate-400 rounded-2xl hover:bg-indigo-50 hover:text-indigo-600 transition-all active:scale-90"><Share2Icon size={20}/></button>
-                              <button onClick={() => { setEditingOrder(o); setOrderForm(o); setIsOrderModalOpen(true); }} className="p-4 bg-slate-50 text-slate-400 rounded-2xl hover:bg-indigo-50 hover:text-indigo-600 transition-all active:scale-90"><Edit3Icon size={20}/></button>
-                              <button onClick={() => askConfirmation("Borrar Pedido", `¿Seguro que deseas eliminar el pedido #${o.orderNumber}?`, () => updateData('orders', appData.orders.filter(ord => ord.id !== o.id)))} className="p-4 bg-white border border-slate-100 text-slate-200 hover:text-rose-500 transition-all opacity-0 group-hover:opacity-100 rounded-xl active:scale-90"><TrashIcon size={18}/></button>
-                           </div>
-                        </div>
-                     </div>
-                   )
-                 })}
-              </div>
-           </div>
-        )}
-
-        {/* CLIENTES */}
-        {activeTab === 'clientes' && (
-           <div className="space-y-10 animate-in fade-in duration-500">
-              <div className="flex flex-col md:flex-row items-center justify-between gap-8 bg-white p-8 rounded-[3rem] shadow-sm border border-slate-200">
-                 <div className="relative flex-1 w-full">
-                    <SearchIcon className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300" size={20}/>
-                    <input type="text" placeholder="Filtrar por nombre o WhatsApp..." value={clientSearch} onChange={e => setClientSearch(e.target.value)} className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-5 pl-16 pr-8 outline-none font-bold" />
-                 </div>
-                 <button onClick={() => { setClientForm({name: '', phone: '', address: ''}); setIsClientModalOpen(true); }} className="bg-slate-900 text-white px-10 py-5 rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-xl flex items-center gap-3 hover:bg-slate-800 transition-all"><PlusIcon size={16}/> Nuevo Cliente</button>
-              </div>
-
-              <div className="bg-white rounded-[3.5rem] border border-slate-200 overflow-hidden shadow-2xl">
-                 <table className="w-full text-left">
-                    <thead className="bg-slate-50/80 border-b border-slate-100">
-                       <tr className="text-[11px] font-black text-slate-400 uppercase tracking-widest">
-                          <th className="px-10 py-8">Cliente</th>
-                          <th className="px-10 py-8">WhatsApp</th>
-                          <th className="px-10 py-8">Dirección</th>
-                          <th className="px-10 py-8 text-right">Operaciones</th>
-                       </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-50">
-                       {filteredClients.map(c => (
-                         <tr key={c.id} className="hover:bg-indigo-50/20 transition-all group">
-                            <td className="px-10 py-8">
-                               <div className="flex items-center gap-5">
-                                  <div className="w-12 h-12 bg-slate-900 text-white rounded-2xl flex items-center justify-center font-black text-xl uppercase shadow-lg">{c.name.charAt(0)}</div>
-                                  <div>
-                                     <div className="font-black text-slate-900 uppercase text-sm leading-none mb-1">{c.name}</div>
-                                     <div className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">Registrado: {new Date(c.createdAt).toLocaleDateString()}</div>
-                                  </div>
-                               </div>
-                            </td>
-                            <td className="px-10 py-8 font-black text-slate-600 text-sm flex items-center gap-2">
-                                <PhoneIcon size={14} className="text-emerald-500"/>
-                                {c.phone}
-                            </td>
-                            <td className="px-10 py-8 font-bold text-slate-400 text-xs uppercase flex items-center gap-2">
-                                <MapPinIcon size={14} className="text-slate-300"/>
-                                {c.address || 'Ubicación no cargada'}
-                            </td>
-                            <td className="px-10 py-8 text-right">
-                               <div className="flex justify-end gap-3 opacity-0 group-hover:opacity-100 transition-all">
-                                  <button onClick={() => { setClientForm(c); setIsClientModalOpen(true); }} className="p-4 bg-indigo-50 text-indigo-600 rounded-2xl hover:bg-indigo-600 hover:text-white transition-all"><Edit3Icon size={18}/></button>
-                                  <button onClick={() => askConfirmation("Borrar Cliente", `¿Seguro que deseas eliminar a ${c.name}?`, () => updateData('clients', appData.clients.filter(cl => cl.id !== c.id)))} className="p-4 bg-white border border-slate-100 text-slate-200 hover:text-rose-500 rounded-xl transition-all active:scale-90"><TrashIcon size={18}/></button>
-                               </div>
-                            </td>
-                         </tr>
-                       ))}
-                    </tbody>
-                 </table>
-              </div>
-           </div>
-        )}
-
-        {/* AJUSTES / CONFIGURACIÓN */}
-        {activeTab === 'config' && (
-           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 animate-in fade-in duration-500 pb-16">
-              <section className="bg-white rounded-[3rem] p-8 border border-slate-200 shadow-sm">
-                 <div className="flex items-center justify-between mb-8">
-                    <h2 className="text-slate-900 font-black text-sm uppercase tracking-widest flex items-center gap-3"><TagIcon className="text-indigo-600" size={18}/> Categorías</h2>
-                    <button onClick={() => updateData('categories', [...appData.categories, { id: Date.now().toString(), name: 'Nueva', pricePerUnit: 0 }])} className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl hover:bg-indigo-600 hover:text-white transition-all"><PlusIcon size={18}/></button>
-                 </div>
+              <section className="bg-indigo-600 text-white rounded-[2.5rem] p-8 shadow-xl shadow-indigo-100">
+                 <h2 className="font-black text-xs uppercase tracking-widest mb-6 opacity-80">Nuevo Diseño</h2>
                  <div className="space-y-4">
-                    {appData.categories.map((cat, idx) => (
-                      <div key={cat.id} className="flex items-center gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-100 group">
-                         <input type="text" value={cat.name} onChange={e => { const nc = [...appData.categories]; nc[idx].name = e.target.value; updateData('categories', nc); }} className="flex-1 bg-transparent font-black text-[10px] uppercase outline-none" />
-                         <div className="flex items-center gap-1 font-black text-indigo-600 text-xs">$ <input type="number" value={cat.pricePerUnit} onChange={e => { const nc = [...appData.categories]; nc[idx].pricePerUnit = Number(e.target.value); updateData('categories', nc); }} className="w-16 bg-transparent text-right outline-none" /></div>
-                         <button onClick={() => askConfirmation("Borrar Categoría", "¿Deseas eliminar esta categoría de precios?", () => updateData('categories', appData.categories.filter(c => c.id !== cat.id)))} className="text-slate-200 hover:text-rose-500 transition-all opacity-0 group-hover:opacity-100"><TrashIcon size={16}/></button>
-                      </div>
-                    ))}
+                    <input placeholder="Nombre del diseño" value={newDesign.name} onChange={e => setNewDesign({...newDesign, name: e.target.value})} className="w-full bg-white/10 border-2 border-white/20 rounded-2xl p-4 font-bold text-white placeholder:text-white/40 outline-none" />
+                    <div className="grid grid-cols-2 gap-4">
+                      <input type="number" placeholder="Ancho" value={newDesign.width || ''} onChange={e => setNewDesign({...newDesign, width: Number(e.target.value)})} className="w-full bg-white/10 border-2 border-white/20 rounded-2xl p-4 font-bold text-white placeholder:text-white/40 outline-none" />
+                      <input type="number" placeholder="Alto" value={newDesign.height || ''} onChange={e => setNewDesign({...newDesign, height: Number(e.target.value)})} className="w-full bg-white/10 border-2 border-white/20 rounded-2xl p-4 font-bold text-white placeholder:text-white/40 outline-none" />
+                    </div>
+                    <input type="number" placeholder="Cantidad" value={newDesign.quantity || ''} onChange={e => setNewDesign({...newDesign, quantity: Number(e.target.value)})} className="w-full bg-white/10 border-2 border-white/20 rounded-2xl p-4 font-bold text-white placeholder:text-white/40 outline-none" />
+                    <button onClick={() => {
+                      if (newDesign.width > 0 && newDesign.height > 0) {
+                        setAppData(prev => ({...prev, designs: [...prev.designs, {...newDesign, id: Date.now().toString()}]}));
+                        setNewDesign({name: '', width: 0, height: 0, quantity: 1});
+                      }
+                    }} className="w-full bg-white text-indigo-600 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg hover:bg-slate-50 transition-all">Añadir al Pliego</button>
                  </div>
               </section>
+            </div>
 
-              <section className="bg-white rounded-[3rem] p-8 border border-slate-200 shadow-sm">
-                 <div className="flex items-center justify-between mb-8">
-                    <h2 className="text-slate-900 font-black text-sm uppercase tracking-widest flex items-center gap-3"><LayersIcon className="text-indigo-600" size={18}/> Tarifas Producción</h2>
-                    <button onClick={() => updateData('costTiers', [...appData.costTiers, { id: Date.now().toString(), minLargo: 0, maxLargo: 0, precioPorCm: 0 }])} className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl transition-all"><PlusIcon size={18}/></button>
-                 </div>
-                 <div className="space-y-3">
-                    {appData.costTiers.map((tier, idx) => (
-                      <div key={tier.id} className="flex gap-2 items-center bg-slate-50 p-3 rounded-2xl border border-slate-100 group">
-                         <input type="number" value={tier.minLargo} onChange={e => { const nt = [...appData.costTiers]; nt[idx].minLargo = Number(e.target.value); updateData('costTiers', nt); }} className="w-12 bg-white border border-slate-200 rounded p-1.5 text-[10px] font-black text-center" />
-                         <span className="text-slate-300 font-black">→</span>
-                         <input type="number" value={tier.maxLargo} onChange={e => { const nt = [...appData.costTiers]; nt[idx].maxLargo = Number(e.target.value); updateData('costTiers', nt); }} className="w-12 bg-white border border-slate-200 rounded p-1.5 text-[10px] font-black text-center" />
-                         <div className="flex-1 text-right font-black text-indigo-600 text-xs">$ <input type="number" value={tier.precioPorCm} onChange={e => { const nt = [...appData.costTiers]; nt[idx].precioPorCm = Number(e.target.value); updateData('costTiers', nt); }} className="w-16 bg-transparent text-right outline-none" /></div>
-                         <button onClick={() => askConfirmation("Borrar Tarifa", "¿Eliminar esta escala de precios de producción?", () => updateData('costTiers', appData.costTiers.filter(t => t.id !== tier.id)))} className="text-slate-200 hover:text-rose-500 transition-all opacity-0 group-hover:opacity-100"><TrashIcon size={16}/></button>
-                      </div>
-                    ))}
-                 </div>
-              </section>
+            <div className="lg:col-span-8 space-y-6">
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm">
+                    <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Largo Total del Pliego</div>
+                    <div className="text-4xl font-black text-slate-900">{packingResult.totalLength.toFixed(1)} <span className="text-xl text-slate-300">cm</span></div>
+                  </div>
+                  <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm">
+                    <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Precio Venta Total</div>
+                    <div className="text-4xl font-black text-indigo-600">${Math.round(totalsPresupuesto.ventaTotal)}</div>
+                  </div>
+               </div>
 
-              <section className="bg-white rounded-[3rem] p-8 border border-slate-200 shadow-sm">
-                 <div className="flex items-center justify-between mb-8">
-                    <h2 className="text-slate-900 font-black text-sm uppercase tracking-widest flex items-center gap-3"><PercentIcon className="text-indigo-600" size={18}/> Descuentos Cantidad</h2>
-                    <button onClick={() => updateData('quantityDiscounts', [...appData.quantityDiscounts, { id: Date.now().toString(), minQty: 0, maxQty: 0, discountPercent: 0 }])} className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl transition-all"><PlusIcon size={18}/></button>
-                 </div>
-                 <div className="space-y-3">
-                    {appData.quantityDiscounts.map((disc, idx) => (
-                      <div key={disc.id} className="flex gap-2 items-center bg-slate-50 p-3 rounded-2xl border border-slate-100 group">
-                         <input type="number" placeholder="Min" value={disc.minQty} onChange={e => { const nd = [...appData.quantityDiscounts]; nd[idx].minQty = Number(e.target.value); updateData('quantityDiscounts', nd); }} className="w-12 bg-white border border-slate-200 rounded p-1.5 text-[10px] font-black text-center" />
-                         <span className="text-slate-300 font-black">→</span>
-                         <input type="number" placeholder="Max" value={disc.maxQty} onChange={e => { const nd = [...appData.quantityDiscounts]; nd[idx].maxQty = Number(e.target.value); updateData('quantityDiscounts', nd); }} className="w-12 bg-white border border-slate-200 rounded p-1.5 text-[10px] font-black text-center" />
-                         <div className="flex-1 text-right font-black text-emerald-600 text-xs"><input type="number" placeholder="%" value={disc.discountPercent} onChange={e => { const nd = [...appData.quantityDiscounts]; nd[idx].discountPercent = Number(e.target.value); updateData('quantityDiscounts', nd); }} className="w-12 bg-transparent text-right outline-none" /> %</div>
-                         <button onClick={() => askConfirmation("Borrar Descuento", "¿Eliminar esta regla de descuento?", () => updateData('quantityDiscounts', appData.quantityDiscounts.filter(d => d.id !== disc.id)))} className="text-slate-200 hover:text-rose-500 transition-all opacity-0 group-hover:opacity-100"><TrashIcon size={16}/></button>
+               <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm p-10">
+                  <h3 className="text-slate-900 font-black text-sm uppercase tracking-widest mb-8">Visualización del Pliego</h3>
+                  <div className="relative bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl mx-auto overflow-hidden" style={{ width: appData.sheetWidth * PREVIEW_SCALE, height: Math.max(200, packingResult.totalLength * PREVIEW_SCALE) }}>
+                    {packingResult.packed.map((p, i) => {
+                       const color = DESIGN_COLORS[i % DESIGN_COLORS.length];
+                       return (
+                         <div key={p.id} className={`absolute border transition-all duration-300 flex items-center justify-center p-1 text-[8px] font-black overflow-hidden ${color.bg} ${color.text} ${color.border} rounded-[4px]`} style={{ left: p.x * PREVIEW_SCALE, top: p.y * PREVIEW_SCALE, width: p.width * PREVIEW_SCALE, height: p.height * PREVIEW_SCALE }}>
+                           {p.width > 3 && p.height > 2 && <span className="rotate-0 truncate">{p.name || p.width + 'x' + p.height}</span>}
+                         </div>
+                       );
+                    })}
+                  </div>
+               </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'pedidos' && (
+          <div className="space-y-8 animate-in fade-in duration-500">
+             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                <div>
+                  <h2 className="text-3xl font-black text-slate-900 tracking-tight">Gestión de Pedidos</h2>
+                  <p className="text-slate-400 text-sm font-bold uppercase tracking-widest mt-1">Control de facturación y estados</p>
+                </div>
+                <button onClick={() => { setOrderForm({}); setIsOrderModalOpen(true); }} className="bg-indigo-600 text-white px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-indigo-100 hover:bg-indigo-700 flex items-center gap-3"><PlusIcon size={18}/> Nuevo Ticket</button>
+             </div>
+
+             <div className="bg-white p-4 rounded-[2rem] border border-slate-200 shadow-sm flex flex-col md:flex-row gap-4">
+                <div className="flex-1 relative">
+                  <SearchIcon className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" size={18}/>
+                  <input placeholder="Buscar por cliente o Nº ticket..." value={orderSearch} onChange={e => setOrderSearch(e.target.value)} className="w-full bg-slate-50 rounded-xl pl-12 pr-6 py-4 font-bold outline-none" />
+                </div>
+             </div>
+
+             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+               {appData.orders.filter(o => {
+                  const client = appData.clients.find(c => c.id === o.clientId);
+                  const search = orderSearch.toLowerCase();
+                  return o.orderNumber.toLowerCase().includes(search) || (client?.name.toLowerCase() || '').includes(search);
+               }).map(o => {
+                 const client = appData.clients.find(c => c.id === o.clientId);
+                 const status = appData.statuses.find(s => s.id === o.statusId);
+                 const category = appData.categories.find(c => c.id === o.categoryId);
+                 return (
+                   <div key={o.id} className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden hover:translate-y-[-4px] transition-transform">
+                      <div className="p-8">
+                         <div className="flex justify-between items-start mb-6">
+                            <span className="bg-slate-100 text-slate-500 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest">#{o.orderNumber}</span>
+                            <span className={`${status?.color || 'bg-slate-400'} text-white px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest shadow-sm`}>{status?.name}</span>
+                         </div>
+                         <h3 className="text-xl font-black text-slate-900 mb-1">{client?.name || 'Cliente Desconocido'}</h3>
+                         <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-6">{category?.name} • {o.width}x{o.height}cm • Qty: {o.quantity}</p>
+                         
+                         <div className="grid grid-cols-2 gap-4 mb-8">
+                            <div className="bg-slate-50 p-4 rounded-2xl">
+                               <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Total</div>
+                               <div className="text-lg font-black text-slate-900">${o.totalPrice}</div>
+                            </div>
+                            <div className="bg-indigo-50 p-4 rounded-2xl">
+                               <div className="text-[9px] font-black text-indigo-400 uppercase tracking-widest mb-1">Restante</div>
+                               <div className="text-lg font-black text-indigo-600">${o.balance}</div>
+                            </div>
+                         </div>
+
+                         <div className="flex gap-2">
+                            <button onClick={() => { setOrderForm(o); setIsOrderModalOpen(true); }} className="flex-1 bg-slate-50 text-slate-400 p-3 rounded-xl hover:bg-indigo-50 hover:text-indigo-600 transition-all flex items-center justify-center"><Edit3Icon size={18}/></button>
+                            <button onClick={() => {
+                              const phone = client?.phone?.replace(/\D/g,'') || '';
+                              const text = `*Ticket #${o.orderNumber}*\n*Total:* $${o.totalPrice}\n*Restante:* $${o.balance}`;
+                              window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank');
+                            }} className="flex-1 bg-emerald-50 text-emerald-500 p-3 rounded-xl hover:bg-emerald-100 transition-all flex items-center justify-center"><MessageCircleIcon size={18}/></button>
+                            <button onClick={() => deleteOrder(o.id)} className="flex-1 bg-rose-50 text-rose-400 p-3 rounded-xl hover:bg-rose-100 hover:text-rose-600 transition-all flex items-center justify-center"><TrashIcon size={18}/></button>
+                         </div>
                       </div>
-                    ))}
-                    {appData.quantityDiscounts.length === 0 && <p className="text-center text-[10px] font-black text-slate-300 uppercase tracking-widest py-10 italic">Sin descuentos configurados</p>}
-                 </div>
-              </section>
-           </div>
+                   </div>
+                 );
+               })}
+             </div>
+          </div>
+        )}
+
+        {activeTab === 'clientes' && (
+          <div className="space-y-8 animate-in fade-in duration-500">
+             <div className="flex justify-between items-center">
+                <div>
+                  <h2 className="text-3xl font-black text-slate-900 tracking-tight">Directorio</h2>
+                  <p className="text-slate-400 text-sm font-bold uppercase tracking-widest mt-1">Base de datos de clientes</p>
+                </div>
+                <button onClick={() => { setClientForm({}); setIsClientModalOpen(true); }} className="bg-indigo-600 text-white px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-indigo-100 flex items-center gap-3"><PlusIcon size={18}/> Nuevo Cliente</button>
+             </div>
+
+             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {appData.clients.filter(c => c.name.toLowerCase().includes(clientSearch.toLowerCase())).map(c => (
+                  <div key={c.id} className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm relative group">
+                    <button onClick={() => deleteClient(c.id)} className="absolute top-6 right-6 p-2 text-slate-300 hover:text-rose-500 transition-colors"><TrashIcon size={16}/></button>
+                    <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mb-6"><UserIcon size={24}/></div>
+                    <h3 className="text-xl font-black text-slate-900 mb-4">{c.name}</h3>
+                    <div className="space-y-3">
+                       <div className="flex items-center gap-3 text-slate-500 text-sm font-bold"><PhoneIcon size={14} className="text-indigo-400"/> {c.phone || 'No registrado'}</div>
+                       <div className="flex items-center gap-3 text-slate-500 text-sm font-bold"><MapPinIcon size={14} className="text-indigo-400"/> {c.address || 'Sin dirección'}</div>
+                    </div>
+                    <button onClick={() => { setClientForm(c); setIsClientModalOpen(true); }} className="mt-8 w-full bg-slate-50 text-slate-400 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-indigo-600 hover:text-white transition-all">Editar Perfil</button>
+                  </div>
+                ))}
+             </div>
+          </div>
+        )}
+
+        {activeTab === 'config' && (
+          <div className="max-w-2xl mx-auto space-y-10 animate-in fade-in duration-500">
+             <section className="bg-white rounded-[3rem] p-10 border border-slate-200 shadow-sm">
+                <h2 className="text-xl font-black text-slate-900 mb-8 flex items-center gap-4"><LayersIcon className="text-indigo-600"/> Categorías de Servicio</h2>
+                <div className="space-y-4">
+                   {appData.categories.map(cat => (
+                     <div key={cat.id} className="flex items-center gap-4 bg-slate-50 p-6 rounded-3xl border-2 border-slate-100">
+                        <div className="flex-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 block">{cat.name}</label><div className="font-black text-slate-900">${cat.pricePerUnit}</div></div>
+                        <input type="number" placeholder="Nuevo precio" className="bg-white w-32 p-3 rounded-xl border-2 border-slate-100 font-bold outline-none focus:border-indigo-500" onChange={async (e) => {
+                           const newPrice = Number(e.target.value);
+                           if (newPrice > 0) {
+                              const newCats = appData.categories.map(c => c.id === cat.id ? {...c, pricePerUnit: newPrice} : c);
+                              setAppData({...appData, categories: newCats});
+                              await supabase.from('categories').upsert(newCats);
+                           }
+                        }} />
+                     </div>
+                   ))}
+                </div>
+             </section>
+          </div>
         )}
       </main>
 
-      {/* MODAL: CARGAR PEDIDO (REDISEÑADO Y COMPACTO) */}
+      {/* MODAL ORDEN */}
       {isOrderModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4 animate-in fade-in duration-300">
-           <div className="bg-white w-full max-w-md rounded-[2rem] p-5 shadow-2xl relative overflow-hidden border border-slate-200">
-              <h2 className="text-lg font-black text-slate-900 uppercase tracking-tighter mb-4 flex items-center gap-3 leading-none">
-                 <div className="w-9 h-9 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg"><PackageIcon size={18}/></div>
-                 {editingOrder ? 'Editar Pedido' : 'Cargar Pedido'}
-              </h2>
-              <div className="space-y-3">
-                 <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-0.5">
-                      <label className="text-[9px] font-black text-slate-400 uppercase ml-2 tracking-widest">Nº Pedido</label>
-                      <input type="text" value={orderForm.orderNumber} onChange={e => setOrderForm({...orderForm, orderNumber: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 font-black outline-none text-[11px]" />
-                    </div>
-                    <div className="space-y-0.5">
-                      <label className="text-[9px] font-black text-slate-400 uppercase ml-2 tracking-widest">Estado</label>
-                      <select value={orderForm.statusId} onChange={e => setOrderForm({...orderForm, statusId: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 font-black outline-none appearance-none text-[11px]">
-                        {appData.statuses.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                      </select>
-                    </div>
-                 </div>
-                 
-                 <div className="space-y-0.5">
-                    <label className="text-[9px] font-black text-slate-400 uppercase ml-2 tracking-widest">Cliente</label>
-                    <select value={orderForm.clientId} onChange={e => setOrderForm({...orderForm, clientId: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 font-black outline-none appearance-none text-[11px]">
-                      {appData.clients.length === 0 ? <option>Registra un cliente</option> : appData.clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-6">
+           <div className="bg-white w-full max-w-xl rounded-[3rem] p-12 shadow-2xl relative animate-in zoom-in-95 duration-200">
+              <button onClick={() => setIsOrderModalOpen(false)} className="absolute top-8 right-8 text-slate-300 hover:text-slate-900 transition-colors"><XIcon size={24}/></button>
+              <h2 className="text-3xl font-black text-slate-900 mb-2 tracking-tight">{orderForm.id ? 'Editar Pedido' : 'Nuevo Pedido'}</h2>
+              <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-10">Completa los datos del ticket</p>
+              
+              <div className="space-y-6">
+                 <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Cliente</label>
+                    <select value={orderForm.clientId} onChange={e => setOrderForm({...orderForm, clientId: e.target.value})} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 font-bold outline-none focus:border-indigo-500">
+                       <option value="">Seleccionar cliente...</option>
+                       {appData.clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
                  </div>
-                 
-                 <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-0.5">
-                      <label className="text-[9px] font-black text-slate-400 uppercase ml-2 tracking-widest">Medidas (cm)</label>
-                      <div className="flex items-center gap-1">
-                        <input type="number" placeholder="W" value={orderForm.width || ''} onChange={e => setOrderForm({...orderForm, width: Number(e.target.value)})} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 font-black outline-none text-[11px] text-center" />
-                        <span className="text-slate-300 font-black">x</span>
-                        <input type="number" placeholder="H" value={orderForm.height || ''} onChange={e => setOrderForm({...orderForm, height: Number(e.target.value)})} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 font-black outline-none text-[11px] text-center" />
-                      </div>
+                 <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Categoría</label>
+                       <select value={orderForm.categoryId} onChange={e => setOrderForm({...orderForm, categoryId: e.target.value})} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 font-bold outline-none focus:border-indigo-500">
+                          <option value="">Servicio...</option>
+                          {appData.categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                       </select>
                     </div>
-                    <div className="space-y-0.5">
-                      <label className="text-[9px] font-black text-slate-400 uppercase ml-2 tracking-widest">Cantidad</label>
-                      <input type="number" value={orderForm.quantity || ''} onChange={e => setOrderForm({...orderForm, quantity: Number(e.target.value)})} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 font-black outline-none text-[11px] text-center" />
+                    <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Cantidad</label>
+                       <input type="number" value={orderForm.quantity || ''} onChange={e => setOrderForm({...orderForm, quantity: Number(e.target.value)})} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 font-bold outline-none focus:border-indigo-500" />
                     </div>
                  </div>
-
-                 <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-0.5">
-                      <label className="text-[9px] font-black text-slate-400 uppercase ml-2 tracking-widest">Categoría</label>
-                      <select value={orderForm.categoryId} onChange={e => setOrderForm({...orderForm, categoryId: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 font-black outline-none appearance-none text-[11px]">
-                        {appData.categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                      </select>
-                    </div>
-                    <div className="space-y-0.5">
-                      <label className="text-[9px] font-black text-slate-400 uppercase ml-2 tracking-widest">Seña ($)</label>
-                      <input type="number" value={orderForm.deposit || ''} onChange={e => setOrderForm({...orderForm, deposit: Number(e.target.value)})} className="w-full bg-emerald-50 border border-emerald-100 rounded-xl p-2 font-black text-emerald-700 outline-none text-[11px]" />
-                    </div>
+                 <div className="grid grid-cols-2 gap-4">
+                    <input type="number" placeholder="Ancho (cm)" value={orderForm.width || ''} onChange={e => setOrderForm({...orderForm, width: Number(e.target.value)})} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 font-bold outline-none focus:border-indigo-500" />
+                    <input type="number" placeholder="Alto (cm)" value={orderForm.height || ''} onChange={e => setOrderForm({...orderForm, height: Number(e.target.value)})} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 font-bold outline-none focus:border-indigo-500" />
                  </div>
-                 
-                 <div className="pt-3 flex gap-2">
-                    <button onClick={() => setIsOrderModalOpen(false)} className="flex-1 py-3 rounded-xl font-black text-[9px] uppercase tracking-widest text-slate-400 hover:bg-slate-50">Cancelar</button>
-                    <button onClick={saveOrder} className="flex-[2] py-3 rounded-xl bg-indigo-600 text-white font-black text-[9px] uppercase tracking-[0.2em] shadow-xl hover:bg-indigo-700 transition-all active:scale-95">Guardar</button>
-                 </div>
-              </div>
-           </div>
-        </div>
-      )}
-
-      {/* MODAL: RESUMEN TICKET */}
-      {showSummary && (
-        <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-xl z-[200] flex items-center justify-center p-6 animate-in zoom-in duration-300">
-           <div className="bg-white w-full max-w-sm rounded-[3rem] p-10 shadow-2xl relative flex flex-col items-center text-center overflow-hidden" ref={ticketRef}>
-              <button onClick={() => setShowSummary(null)} className="absolute top-6 right-6 text-slate-300 hover:text-slate-900 transition-all active:scale-125"><XIcon size={24}/></button>
-              <div className="w-20 h-20 bg-indigo-600 rounded-[2rem] flex items-center justify-center text-white mb-6 shadow-2xl shadow-indigo-200"><CalculatorIcon size={36}/></div>
-              <h2 className="font-black text-2xl text-slate-900 uppercase mb-1 tracking-tighter leading-none">Ticket Pedido</h2>
-              <p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.3em] mb-6">ID #{showSummary.orderNumber}</p>
-              
-              <div className="w-full space-y-4 border-y-2 border-slate-50 py-6 mb-8">
-                 <div className="flex justify-between text-[11px]"><span className="text-slate-400 font-bold uppercase tracking-widest">Cliente</span><span className="font-black text-slate-900 uppercase">{appData.clients.find(c => c.id === showSummary.clientId)?.name}</span></div>
-                 <div className="flex justify-between text-[11px]"><span className="text-slate-400 font-bold uppercase tracking-widest">Medida</span><span className="font-black text-slate-900">{showSummary.width}x{showSummary.height} cm</span></div>
-                 <div className="flex justify-between text-[11px]"><span className="text-slate-400 font-bold uppercase tracking-widest">Cantidad</span><span className="font-black text-slate-900">{showSummary.quantity} u.</span></div>
-                 <div className="flex justify-between pt-4 border-t-2 border-slate-50"><span className="text-indigo-600 font-black uppercase text-[10px] tracking-widest">Total</span><span className="font-black text-indigo-600 text-xl">${showSummary.totalPrice}</span></div>
-                 <div className="flex justify-between items-center"><span className="text-emerald-500 font-black uppercase text-[10px] tracking-widest">Seña</span><span className="font-black text-emerald-500 text-sm">${showSummary.deposit}</span></div>
-                 <div className="flex justify-between items-center"><span className="text-rose-500 font-black uppercase text-[10px] tracking-widest">Restante</span><span className="font-black text-rose-500 text-lg">${showSummary.balance}</span></div>
-              </div>
-
-              <div className="flex flex-col gap-3 w-full">
-                  <button onClick={() => shareToWA(showSummary)} className="w-full bg-emerald-500 text-white py-5 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-3 shadow-xl hover:bg-emerald-600 transition-all active:scale-95"><MessageCircleIcon size={18}/> Enviar WhatsApp</button>
-                  <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest italic opacity-60">¡Captura pantalla para compartir!</p>
-              </div>
-           </div>
-        </div>
-      )}
-      
-      {/* MODAL: CLIENTE (VALIDACIÓN WHATSAPP CORREGIDA) */}
-      {isClientModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-6 animate-in fade-in duration-300">
-           <div className="bg-white w-full max-w-md rounded-[3.5rem] p-12 shadow-2xl relative overflow-hidden">
-              <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter mb-10 flex items-center gap-4"><div className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center text-white"><UsersIcon size={24}/></div> Ficha Cliente</h2>
-              <div className="space-y-6">
-                 <div className="space-y-2"><label className="text-[11px] font-black text-slate-400 uppercase ml-2 tracking-widest">Nombre</label><input type="text" value={clientForm.name} onChange={e => setClientForm({...clientForm, name: e.target.value})} className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 font-black outline-none" /></div>
                  <div className="space-y-2">
-                    <label className="text-[11px] font-black text-slate-400 uppercase ml-2 tracking-widest">WhatsApp</label>
-                    <input 
-                      type="text" 
-                      value={clientForm.phone} 
-                      placeholder="+54221..."
-                      onChange={e => {
-                        const val = e.target.value;
-                        // Permitir solo números y el símbolo '+'
-                        const filtered = val.replace(/[^0-9+]/g, '');
-                        setClientForm({...clientForm, phone: filtered});
-                      }} 
-                      className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 font-black outline-none" 
-                    />
+                    <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Seña ($)</label>
+                    <input type="number" value={orderForm.deposit || ''} onChange={e => setOrderForm({...orderForm, deposit: Number(e.target.value)})} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 font-bold outline-none focus:border-indigo-500" />
                  </div>
-                 <div className="space-y-2"><label className="text-[11px] font-black text-slate-400 uppercase ml-2 tracking-widest">Dirección</label><input type="text" value={clientForm.address} onChange={e => setClientForm({...clientForm, address: e.target.value})} className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 font-black outline-none" /></div>
-                 <div className="pt-6 flex gap-4">
-                    <button onClick={() => setIsClientModalOpen(false)} className="flex-1 py-5 font-black text-slate-400 text-xs uppercase tracking-widest">Cerrar</button>
-                    <button onClick={saveClient} className="flex-[2] py-5 bg-slate-900 text-white font-black rounded-2xl shadow-xl text-xs uppercase tracking-widest active:scale-95">Guardar</button>
+                 <div className="pt-6">
+                    <button onClick={saveOrder} className="w-full bg-indigo-600 text-white py-5 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all">Guardar Ticket</button>
                  </div>
               </div>
            </div>
         </div>
       )}
 
-      {/* MODAL: CONFIRMACIÓN PERSONALIZADA (REMPLAZA CONFIRM BROWSER) */}
-      {confirmModal && (
-        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-[300] flex items-center justify-center p-6 animate-in fade-in duration-200">
-           <div className="bg-white w-full max-sm rounded-[2.5rem] p-8 shadow-2xl text-center border border-rose-100">
-              <div className="w-16 h-16 bg-rose-50 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-6">
-                <AlertTriangleIcon size={32}/>
-              </div>
-              <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight mb-2 leading-none">{confirmModal.title}</h3>
-              <p className="text-slate-500 font-medium text-sm mb-8">{confirmModal.message}</p>
-              <div className="flex gap-3">
-                 <button onClick={() => setConfirmModal(null)} className="flex-1 py-4 rounded-2xl bg-slate-50 text-slate-400 font-black text-[10px] uppercase tracking-widest">Cancelar</button>
-                 <button onClick={() => { confirmModal.onConfirm(); setConfirmModal(null); }} className="flex-1 py-4 rounded-2xl bg-rose-500 text-white font-black text-[10px] uppercase tracking-widest shadow-lg shadow-rose-100 active:scale-95">Confirmar</button>
+      {/* MODAL CLIENTE */}
+      {isClientModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-6">
+           <div className="bg-white w-full max-w-xl rounded-[3rem] p-12 shadow-2xl relative animate-in zoom-in-95 duration-200">
+              <button onClick={() => setIsClientModalOpen(false)} className="absolute top-8 right-8 text-slate-300 hover:text-slate-900 transition-colors"><XIcon size={24}/></button>
+              <h2 className="text-3xl font-black text-slate-900 mb-2 tracking-tight">{clientForm.id ? 'Editar Cliente' : 'Nuevo Cliente'}</h2>
+              <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-10">Información de contacto</p>
+              
+              <div className="space-y-6">
+                 <input placeholder="Nombre completo" value={clientForm.name || ''} onChange={e => setClientForm({...clientForm, name: e.target.value})} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 font-bold outline-none focus:border-indigo-500" />
+                 <input placeholder="WhatsApp (ej: 549...)" value={clientForm.phone || ''} onChange={e => setClientForm({...clientForm, phone: e.target.value})} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 font-bold outline-none focus:border-indigo-500" />
+                 <input placeholder="Dirección / Localidad" value={clientForm.address || ''} onChange={e => setClientForm({...clientForm, address: e.target.value})} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 font-bold outline-none focus:border-indigo-500" />
+                 <div className="pt-6">
+                    <button onClick={saveClient} className="w-full bg-indigo-600 text-white py-5 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all">Guardar Perfil</button>
+                 </div>
               </div>
            </div>
         </div>
