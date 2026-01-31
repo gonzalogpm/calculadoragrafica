@@ -385,45 +385,47 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto p-6 lg:p-10">
+      <main className="max-w-7xl mx-auto p-4 lg:p-10">
         {activeTab === 'dash' && (
-           <div className="space-y-12">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+           <div className="space-y-8">
+              {/* Dashboard Stats */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
                  {(appData.statuses || []).map(s => (
-                   <div key={s.id} className="bg-white p-8 rounded-[2.5rem] border shadow-sm flex flex-col items-center group transition-all hover:border-indigo-200">
-                      <div className={`w-3 h-3 rounded-full ${s.color} mb-3`}></div>
-                      <div className="text-4xl font-black text-slate-900 mb-1">{(appData.orders || []).filter(o => o && o.status_id === s.id).length}</div>
-                      <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{s.name}</div>
+                   <div key={s.id} className="bg-white p-6 md:p-8 rounded-[2.5rem] border shadow-sm flex flex-col items-center group transition-all hover:border-indigo-200">
+                      <div className={`w-3 h-3 rounded-full ${s.color} mb-2`}></div>
+                      <div className="text-3xl md:text-4xl font-black text-slate-900 mb-1">{(appData.orders || []).filter(o => o && o.status_id === s.id).length}</div>
+                      <div className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">{s.name}</div>
                    </div>
                  ))}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Utility Row (Backup & Install) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {session?.user && ((appData.clients?.length || 0) > 0 || (appData.orders?.length || 0) > 0) && (
-                  <div className="bg-indigo-600 rounded-[2rem] p-6 flex items-center justify-between gap-4 text-white shadow-xl">
-                     <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 bg-white/20 rounded-2xl flex items-center justify-center shrink-0"><CloudUploadIcon size={20}/></div>
+                  <div className="bg-indigo-600 rounded-[2rem] p-4 md:p-5 flex items-center justify-between gap-3 text-white shadow-lg">
+                     <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 bg-white/20 rounded-xl flex items-center justify-center shrink-0"><CloudUploadIcon size={16}/></div>
                         <div>
-                           <h3 className="text-sm font-black uppercase leading-tight">Backup Nube</h3>
-                           <p className="text-indigo-100 text-[9px] font-bold uppercase tracking-widest">Sincroniza tus datos.</p>
+                           <h3 className="text-xs font-black uppercase leading-tight">Backup Nube</h3>
+                           <p className="text-indigo-100 text-[8px] font-bold uppercase tracking-widest">Sincroniza datos.</p>
                         </div>
                      </div>
-                     <button disabled={isMigrating} onClick={pushLocalDataToCloud} className="bg-white text-indigo-600 px-6 py-3 rounded-xl font-black text-[10px] uppercase shadow-md hover:scale-105 transition-all">
-                       {isMigrating ? <Loader2Icon className="animate-spin" size={14}/> : 'Subir'}
+                     <button disabled={isMigrating} onClick={pushLocalDataToCloud} className="bg-white text-indigo-600 px-4 py-2 rounded-lg font-black text-[9px] uppercase shadow-sm hover:scale-105 transition-all">
+                       {isMigrating ? <Loader2Icon className="animate-spin" size={12}/> : 'Subir'}
                      </button>
                   </div>
                 )}
                 
                 {deferredPrompt && (
-                  <div className="bg-white rounded-[2rem] p-6 border shadow-sm flex items-center justify-between gap-4">
-                     <div className="flex items-center gap-4">
-                        <div className="bg-slate-100 p-2.5 rounded-2xl text-slate-900 shrink-0"><SmartphoneIcon size={20}/></div>
+                  <div className="bg-white rounded-[2rem] p-4 md:p-5 border shadow-sm flex items-center justify-between gap-3">
+                     <div className="flex items-center gap-3">
+                        <div className="bg-slate-100 p-2 rounded-xl text-slate-900 shrink-0"><SmartphoneIcon size={16}/></div>
                         <div>
-                          <h4 className="font-black text-sm uppercase leading-tight">Instalar App</h4>
-                          <p className="text-[9px] font-bold text-slate-400 uppercase">Acceso directo en pantalla.</p>
+                          <h4 className="font-black text-xs uppercase leading-tight">Instalar App</h4>
+                          <p className="text-[8px] font-bold text-slate-400 uppercase">Acceso directo.</p>
                         </div>
                      </div>
-                     <button onClick={handleInstallClick} className="bg-slate-900 text-white px-6 py-3 rounded-xl font-black text-[10px] uppercase flex items-center gap-2 hover:scale-105 transition-all"><DownloadIcon size={14}/> Instalar</button>
+                     <button onClick={handleInstallClick} className="bg-slate-900 text-white px-4 py-2 rounded-lg font-black text-[9px] uppercase flex items-center gap-1 hover:scale-105 transition-all"><DownloadIcon size={12}/> Instalar</button>
                   </div>
                 )}
               </div>
@@ -473,7 +475,7 @@ const App: React.FC = () => {
                             </div>
                           ))}
                         </div>
-                     ) : <div className="text-slate-800 opacity-20 uppercase font-black py-20">Ingresa diseños</div>}
+                     ) : <div className="text-slate-800 opacity-20 uppercase font-black py-20 text-center">Ingresa diseños para visualizar el pliego</div>}
                   </div>
                </section>
                <section className="bg-white rounded-[2.5rem] p-10 border shadow-sm overflow-x-auto custom-scrollbar">
@@ -508,16 +510,16 @@ const App: React.FC = () => {
         )}
 
         {activeTab === 'pedidos' && (
-           <div className="space-y-10">
-              <div className="flex flex-col lg:flex-row items-center justify-between gap-6 bg-white p-6 rounded-[2rem] border shadow-sm">
+           <div className="space-y-6">
+              <div className="flex flex-col lg:flex-row items-center justify-between gap-4 bg-white p-4 rounded-[2rem] border shadow-sm">
                  <div className="relative flex-1 w-full"><SearchIcon className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300" size={18}/><input type="text" placeholder="Buscar..." value={orderSearch} onChange={e => setOrderSearch(e.target.value)} className="w-full bg-slate-50 p-4 pl-14 rounded-xl font-bold border-none" /></div>
-                 <div className="flex items-center gap-2 overflow-x-auto w-full lg:w-auto custom-scrollbar">
+                 <div className="flex items-center gap-2 overflow-x-auto w-full lg:w-auto custom-scrollbar pb-1">
                     {['all', ...(appData.statuses || []).map(s => s.id)].map(st => (
-                      <button key={st} onClick={() => setStatusFilter(st)} className={`px-5 py-3 rounded-xl text-[10px] font-black uppercase transition-all whitespace-nowrap ${statusFilter === st ? 'bg-indigo-600 text-white' : 'bg-white text-slate-400 border'}`}>
+                      <button key={st} onClick={() => setStatusFilter(st)} className={`px-4 py-2.5 rounded-xl text-[9px] font-black uppercase transition-all whitespace-nowrap ${statusFilter === st ? 'bg-indigo-600 text-white' : 'bg-white text-slate-400 border'}`}>
                         {st === 'all' ? 'Todos' : appData.statuses.find(s => s.id === st)?.name}
                       </button>
                     ))}
-                    <button onClick={() => { setEditingOrder(null); setOrderForm({ order_number: String((appData.orders?.length || 0) + 1).padStart(4, '0'), status_id: 'hacer', client_id: '', width: 0, height: 0, quantity: 1, category_id: '', deposit: 0 }); setIsOrderModalOpen(true); }} className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-black text-[10px] uppercase shadow-lg flex items-center gap-2 hover:scale-105 transition-all"><PlusIcon size={16}/> Cargar</button>
+                    <button onClick={() => { setEditingOrder(null); setOrderForm({ order_number: String((appData.orders?.length || 0) + 1).padStart(4, '0'), status_id: 'hacer', client_id: '', width: 0, height: 0, quantity: 1, category_id: '', deposit: 0 }); setIsOrderModalOpen(true); }} className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-black text-[9px] uppercase shadow-lg flex items-center gap-2 hover:scale-105 transition-all shrink-0"><PlusIcon size={14}/> Cargar</button>
                  </div>
               </div>
               <div className="grid gap-4">
@@ -526,55 +528,67 @@ const App: React.FC = () => {
                    const s = (appData.statuses || []).find(st => st && st.id === o.status_id);
                    const cat = (appData.categories || []).find(cat => cat && cat.id === o.category_id);
                    return (
-                     <div key={o.id} className="bg-white rounded-[2rem] p-6 border shadow-sm flex flex-col md:flex-row items-center gap-6 group">
-                        <div className="flex-1 flex items-center gap-5 w-full">
-                           <div className={`w-14 h-14 rounded-2xl ${s?.color} text-white flex flex-col items-center justify-center font-black text-[9px]`}><span className="opacity-60">Nº</span><span className="text-xs">#{o.order_number}</span></div>
-                           <div><div className="font-black text-slate-900 uppercase text-sm">{c?.name || 'DESCONOCIDO'}</div><div className="text-[10px] font-bold text-slate-400 uppercase flex gap-2"><span className={`px-2 py-0.5 rounded-full text-white ${s?.color}`}>{s?.name}</span><span className="bg-slate-100 px-2 py-0.5 rounded-full">{cat?.name}</span>{o.width}x{o.height}cm</div></div>
-                        </div>
-                        <div className="flex items-center gap-8 w-full md:w-auto justify-end">
-                           <div className="text-right min-w-[300px] border-r pr-6 border-slate-100 flex gap-6 items-center">
-                              <div className="text-right"><div className="text-[9px] font-black text-emerald-500 uppercase">Seña</div><div className="font-black text-emerald-600 text-sm">$ {o.deposit.toLocaleString()}</div></div>
-                              <div className="text-right"><div className="text-[9px] font-black text-rose-400 uppercase">Saldo</div><div className="font-black text-rose-500 text-sm">$ {o.balance.toLocaleString()}</div></div>
-                              <div className="text-right border-l pl-6 border-slate-100"><div className="text-[9px] font-black text-slate-400 uppercase">Total</div><div className="font-black text-slate-900 text-lg">$ {o.total_price.toLocaleString()}</div></div>
+                     <div key={o.id} className="bg-white rounded-[2rem] p-5 border shadow-sm flex flex-col md:flex-row items-stretch md:items-center gap-5 group transition-all hover:border-indigo-100">
+                        <div className="flex-1 flex items-center gap-4">
+                           <div className={`w-12 h-12 rounded-2xl ${s?.color} text-white flex flex-col items-center justify-center font-black text-[8px] shrink-0`}><span className="opacity-60">Nº</span><span className="text-xs">#{o.order_number}</span></div>
+                           <div className="min-w-0 flex-1">
+                              <div className="font-black text-slate-900 uppercase text-sm truncate">{c?.name || 'DESCONOCIDO'}</div>
+                              <div className="text-[9px] font-bold text-slate-400 uppercase flex flex-wrap gap-2 mt-0.5">
+                                 <span className={`px-2 py-0.5 rounded-full text-white ${s?.color}`}>{s?.name}</span>
+                                 <span className="bg-slate-100 px-2 py-0.5 rounded-full">{cat?.name}</span>
+                                 <span>{o.width}x{o.height}cm</span>
+                              </div>
                            </div>
-                           <div className="flex gap-2">
-                              <button onClick={() => setShowSummary(o)} className="p-3 bg-slate-50 text-slate-400 rounded-xl hover:bg-indigo-50"><Share2Icon size={18}/></button>
-                              <button onClick={() => { setEditingOrder(o); setOrderForm(o); setIsOrderModalOpen(true); }} className="p-3 bg-slate-50 text-slate-400 rounded-xl hover:bg-indigo-50"><Edit3Icon size={18}/></button>
-                              <button onClick={() => askConfirmation("Borrar", `¿Eliminar #${o.order_number}?`, () => updateData('orders', appData.orders.filter(ord => ord.id !== o.id)))} className="p-3 text-slate-200 hover:text-rose-500"><TrashIcon size={18}/></button>
+                        </div>
+                        
+                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 md:gap-8 justify-end border-t md:border-t-0 pt-4 md:pt-0">
+                           <div className="flex justify-between sm:justify-end items-center gap-4 sm:gap-6 md:border-r md:pr-6 border-slate-100">
+                              <div className="text-left sm:text-right"><div className="text-[8px] font-black text-emerald-500 uppercase">Seña</div><div className="font-black text-emerald-600 text-xs">$ {o.deposit.toLocaleString()}</div></div>
+                              <div className="text-left sm:text-right"><div className="text-[8px] font-black text-rose-400 uppercase">Saldo</div><div className="font-black text-rose-500 text-xs">$ {o.balance.toLocaleString()}</div></div>
+                              <div className="text-left sm:text-right sm:border-l sm:pl-6 border-slate-100"><div className="text-[8px] font-black text-slate-400 uppercase">Total</div><div className="font-black text-slate-900 text-base md:text-lg">$ {o.total_price.toLocaleString()}</div></div>
+                           </div>
+                           <div className="flex gap-2 justify-end">
+                              <button onClick={() => setShowSummary(o)} className="p-2.5 bg-slate-50 text-slate-400 rounded-xl hover:bg-indigo-50 hover:text-indigo-600 transition-colors"><Share2Icon size={16}/></button>
+                              <button onClick={() => { setEditingOrder(o); setOrderForm(o); setIsOrderModalOpen(true); }} className="p-2.5 bg-slate-50 text-slate-400 rounded-xl hover:bg-indigo-50 hover:text-indigo-600 transition-colors"><Edit3Icon size={16}/></button>
+                              <button onClick={() => askConfirmation("Borrar", `¿Eliminar #${o.order_number}?`, () => updateData('orders', appData.orders.filter(ord => ord.id !== o.id)))} className="p-2.5 text-slate-200 hover:text-rose-500 transition-colors"><TrashIcon size={16}/></button>
                            </div>
                         </div>
                      </div>
                    );
                  })}
+                 {filteredOrders.length === 0 && <div className="text-center py-20 text-slate-300 font-black uppercase text-xs tracking-widest">No hay pedidos para mostrar</div>}
               </div>
            </div>
         )}
 
         {activeTab === 'clients' && (
-           <div className="space-y-10">
-              <div className="flex flex-col md:flex-row items-center justify-between gap-6 bg-white p-6 rounded-[2rem] border shadow-sm">
+           <div className="space-y-6">
+              <div className="flex flex-col md:flex-row items-center justify-between gap-4 bg-white p-4 rounded-[2rem] border shadow-sm">
                  <div className="relative flex-1 w-full"><SearchIcon className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300" size={18}/><input type="text" placeholder="Buscar cliente..." value={clientSearch} onChange={e => setClientSearch(e.target.value)} className="w-full bg-slate-50 p-4 pl-14 rounded-xl font-bold border-none" /></div>
-                 <button onClick={() => { setClientForm({}); setIsClientModalOpen(true); }} className="bg-slate-900 text-white px-8 py-4 rounded-xl font-black text-[10px] uppercase shadow-lg flex items-center gap-2 hover:scale-105 transition-all"><PlusIcon size={16}/> Nuevo Cliente</button>
+                 <button onClick={() => { setClientForm({}); setIsClientModalOpen(true); }} className="bg-slate-900 text-white px-6 py-4 rounded-xl font-black text-[10px] uppercase shadow-lg flex items-center gap-2 hover:scale-105 transition-all w-full md:w-auto justify-center"><PlusIcon size={16}/> Nuevo Cliente</button>
               </div>
-              <div className="bg-white rounded-[2rem] border overflow-hidden shadow-sm overflow-x-auto custom-scrollbar">
-                 <table className="w-full text-left">
-                    <thead className="bg-slate-50 border-b text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                       <tr><th className="px-8 py-6">Cliente</th><th className="px-8 py-6">WhatsApp</th><th className="px-8 py-6">Dirección</th><th className="px-8 py-6 text-right">Acciones</th></tr>
-                    </thead>
-                    <tbody className="divide-y">
-                       {filteredClients.map(c => (
-                         <tr key={c.id} className="hover:bg-slate-50 group">
-                            <td className="px-8 py-6 flex items-center gap-4"><div className="w-10 h-10 bg-slate-900 text-white rounded-xl flex items-center justify-center font-black text-sm">{c.name?.charAt(0)}</div><div className="font-black text-slate-900 uppercase text-xs">{c.name}</div></td>
-                            <td className="px-8 py-6 font-black text-slate-600 text-xs">{c.phone}</td>
-                            <td className="px-8 py-6 font-black text-slate-400 text-[10px] uppercase">{c.address || '-'}</td>
-                            <td className="px-8 py-6 text-right opacity-0 group-hover:opacity-100 transition-all">
-                               <button onClick={() => { setClientForm(c); setIsClientModalOpen(true); }} className="p-3 text-indigo-600"><Edit3Icon size={18}/></button>
-                               <button onClick={() => askConfirmation("Borrar", `¿Eliminar a ${c.name}?`, () => updateData('clients', appData.clients.filter(cl => cl.id !== c.id)))} className="p-3 text-rose-500"><TrashIcon size={18}/></button>
-                            </td>
-                         </tr>
-                       ))}
-                    </tbody>
-                 </table>
+              
+              {/* Clients Grid/List View for Mobile and Tablet */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-4">
+                 {filteredClients.map(c => (
+                   <div key={c.id} className="bg-white rounded-[2rem] p-5 border shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-4 group transition-all hover:border-indigo-100">
+                      <div className="flex items-start lg:items-center gap-4">
+                         <div className="w-12 h-12 bg-slate-900 text-white rounded-2xl flex items-center justify-center font-black text-sm shrink-0 uppercase">{c.name?.charAt(0)}</div>
+                         <div className="min-w-0">
+                            <div className="font-black text-slate-900 uppercase text-sm truncate">{c.name}</div>
+                            <div className="flex flex-col gap-1 mt-1">
+                               <div className="font-black text-slate-500 text-[10px] flex items-center gap-1.5"><MessageCircleIcon size={12} className="text-emerald-500"/> {c.phone}</div>
+                               <div className="font-bold text-slate-400 text-[9px] uppercase truncate">{c.address || 'Sin dirección registrada'}</div>
+                            </div>
+                         </div>
+                      </div>
+                      <div className="flex items-center justify-end gap-2 pt-3 lg:pt-0 border-t lg:border-t-0 border-slate-50 lg:opacity-0 lg:group-hover:opacity-100 transition-all">
+                         <button onClick={() => { setClientForm(c); setIsClientModalOpen(true); }} className="p-3 bg-slate-50 text-indigo-600 rounded-xl hover:bg-indigo-600 hover:text-white transition-all"><Edit3Icon size={18}/></button>
+                         <button onClick={() => askConfirmation("Borrar", `¿Eliminar a ${c.name}?`, () => updateData('clients', appData.clients.filter(cl => cl.id !== c.id)))} className="p-3 bg-slate-50 text-rose-500 rounded-xl hover:bg-rose-500 hover:text-white transition-all"><TrashIcon size={18}/></button>
+                      </div>
+                   </div>
+                 ))}
+                 {filteredClients.length === 0 && <div className="text-center py-20 text-slate-300 font-black uppercase text-xs tracking-widest">No se encontraron clientes</div>}
               </div>
            </div>
         )}
@@ -663,10 +677,10 @@ const App: React.FC = () => {
       )}
 
       {isClientModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-6">
-           <div className="bg-white w-full max-w-md rounded-[2.5rem] p-10 shadow-2xl relative">
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+           <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8 md:p-10 shadow-2xl relative">
               <h2 className="text-xl font-black text-slate-900 uppercase mb-8 flex items-center gap-3"><UsersIcon/> Cliente</h2>
-              <div className="space-y-6">
+              <div className="space-y-5">
                  <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase ml-2">Nombre</label><input type="text" value={clientForm.name || ''} onChange={e => setClientForm({...clientForm, name: e.target.value})} className="w-full bg-slate-50 p-4 rounded-xl font-black border-none" /></div>
                  <div className="space-y-1">
                     <label className="text-[10px] font-black text-slate-400 uppercase ml-2">WhatsApp</label>
@@ -728,10 +742,10 @@ const App: React.FC = () => {
 
       {showSummary && (
         <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-md z-[200] flex items-center justify-center p-6">
-           <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-10 shadow-2xl relative text-center">
+           <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-8 md:p-10 shadow-2xl relative text-center">
               <button onClick={() => setShowSummary(null)} className="absolute top-6 right-6 text-slate-300 hover:text-slate-900 transition-all"><XIcon size={24}/></button>
               <div className="w-16 h-16 bg-indigo-600 rounded-[1.5rem] flex items-center justify-center text-white mb-6 mx-auto"><CalculatorIcon size={32}/></div>
-              <h2 className="font-black text-xl uppercase mb-6 tracking-tight">Resumen de Pedido</h2>
+              <h2 className="font-black text-xl uppercase mb-6 tracking-tight leading-none">Resumen de Pedido</h2>
               
               <div className="space-y-3 border-y py-6 mb-8 text-left text-[11px] uppercase font-bold">
                  <div className="flex justify-between border-b pb-2 border-slate-50"><span>Ticket:</span><span className="text-slate-900 font-black">#{showSummary.order_number}</span></div>
