@@ -372,6 +372,37 @@ const App: React.FC = () => {
     setIsOrderModalOpen(true);
   };
 
+  const syncCategoryToCloud = async (cat: Category) => {
+    if (supabase && session?.user) {
+      await supabase.from('categories').upsert({
+        id: toSafeUUID(cat.id),
+        name: cat.name,
+        price_per_unit: cat.pricePerUnit,
+        user_id: session.user.id
+      });
+    }
+  };
+
+  const handleAddCategory = () => {
+    const newCat = { id: generateUUID(), name: 'NUEVA', pricePerUnit: 0 };
+    updateData('categories', [...appData.categories, newCat]);
+    syncCategoryToCloud(newCat);
+  };
+
+  const handleUpdateCategory = (idx: number, updates: Partial<Category>) => {
+    const nc = [...appData.categories];
+    nc[idx] = { ...nc[idx], ...updates };
+    updateData('categories', nc);
+    syncCategoryToCloud(nc[idx]);
+  };
+
+  const handleDeleteCategory = async (id: string) => {
+    updateData('categories', appData.categories.filter(c => c.id !== id));
+    if (supabase && session?.user) {
+      await supabase.from('categories').delete().eq('id', toSafeUUID(id));
+    }
+  };
+
   const filteredOrders = useMemo(() => {
     const s = orderSearch.toLowerCase();
     return appData.orders.filter(o => {
@@ -569,7 +600,6 @@ const App: React.FC = () => {
                            </div>
                         </div>
                         
-                        {/* Precios en un renglón ajustado */}
                         <div className="flex flex-wrap items-center justify-between gap-4 pt-4 border-t border-slate-50">
                            <div className="flex items-center gap-4 lg:gap-8 overflow-x-auto no-scrollbar-mobile flex-1">
                               <div><div className="text-[8px] font-black text-slate-400 uppercase">Seña</div><div className="font-black text-emerald-600 text-[10px] lg:text-xs">$ {o.deposit.toLocaleString()}</div></div>
@@ -577,7 +607,6 @@ const App: React.FC = () => {
                               <div className="border-l pl-4"><div className="text-[8px] font-black text-slate-400 uppercase">Total</div><div className="font-black text-slate-900 text-sm lg:text-base">$ {o.total_price.toLocaleString()}</div></div>
                            </div>
                            
-                           {/* Botones de acción en la parte inferior para móvil */}
                            <div className="flex gap-2 w-full sm:w-auto justify-end mt-2 sm:mt-0">
                               <button onClick={() => setShowSummary(o)} className="p-3 bg-slate-50 text-slate-400 rounded-xl hover:bg-indigo-50 transition-all flex-1 sm:flex-none flex justify-center"><Share2Icon size={16}/></button>
                               <button onClick={() => { setEditingOrder(o); setOrderForm(o); setIsOrderModalOpen(true); }} className="p-3 bg-slate-50 text-slate-400 rounded-xl hover:bg-indigo-50 transition-all flex-1 sm:flex-none flex justify-center"><Edit3Icon size={16}/></button>
@@ -612,7 +641,6 @@ const App: React.FC = () => {
                          </div>
                       </div>
                       
-                      {/* Dirección y acciones al final */}
                       <div className="mt-auto space-y-4">
                          {c.address && (
                            <div className="flex items-start gap-2 text-slate-400 text-[10px] font-bold uppercase leading-tight bg-slate-50 p-3 rounded-xl">
@@ -641,14 +669,14 @@ const App: React.FC = () => {
               <section className="bg-white rounded-[2rem] p-6 lg:p-8 border shadow-sm">
                  <div className="flex items-center justify-between mb-8">
                     <h2 className="text-slate-900 font-black text-[10px] uppercase tracking-widest flex items-center gap-2"><TagIcon size={16}/> Categorías</h2>
-                    <button onClick={() => updateData('categories', [...appData.categories, { id: generateUUID(), name: 'NUEVA', pricePerUnit: 0 }])} className="p-2 bg-indigo-50 text-indigo-600 rounded-lg transition-all"><PlusIcon size={16}/></button>
+                    <button onClick={handleAddCategory} className="p-2 bg-indigo-50 text-indigo-600 rounded-lg transition-all"><PlusIcon size={16}/></button>
                  </div>
                  <div className="space-y-4">
                     {appData.categories.map((cat, idx) => (
                       <div key={cat.id} className="flex items-center gap-3 bg-slate-50 p-3 lg:p-4 rounded-xl border group">
-                         <input type="text" value={cat.name} onChange={e => { const nc = [...appData.categories]; nc[idx].name = e.target.value; updateData('categories', nc); }} className="flex-1 bg-transparent font-black text-[10px] uppercase outline-none min-w-0" />
-                         <div className="font-black text-indigo-600 text-xs shrink-0">$ <input type="number" value={cat.pricePerUnit} onChange={e => { const nc = [...appData.categories]; nc[idx].pricePerUnit = Number(e.target.value); updateData('categories', nc); }} className="w-14 bg-transparent text-right outline-none" /></div>
-                         <button onClick={() => updateData('categories', appData.categories.filter(c => c.id !== cat.id))} className="text-slate-200 hover:text-rose-500 transition-all shrink-0"><TrashIcon size={14}/></button>
+                         <input type="text" value={cat.name} onChange={e => handleUpdateCategory(idx, { name: e.target.value })} className="flex-1 bg-transparent font-black text-[10px] uppercase outline-none min-w-0" />
+                         <div className="font-black text-indigo-600 text-xs shrink-0">$ <input type="number" value={cat.pricePerUnit} onChange={e => handleUpdateCategory(idx, { pricePerUnit: Number(e.target.value) })} className="w-14 bg-transparent text-right outline-none" /></div>
+                         <button onClick={() => handleDeleteCategory(cat.id)} className="text-slate-200 hover:text-rose-500 transition-all shrink-0"><TrashIcon size={14}/></button>
                       </div>
                     ))}
                  </div>
@@ -691,7 +719,6 @@ const App: React.FC = () => {
         )}
       </main>
 
-      {/* Modales - Ajustados para evitar scroll horizontal en móviles */}
       {isAuthModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
            <div className="bg-white w-full max-w-sm rounded-[2rem] p-8 lg:p-10 shadow-2xl relative">
@@ -754,18 +781,18 @@ const App: React.FC = () => {
       )}
 
       {showSummary && (
-        <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-md z-[200] flex items-center justify-center p-4">
-           <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-8 lg:p-10 shadow-2xl relative text-center max-h-[90vh] overflow-y-auto">
-              <button onClick={() => setShowSummary(null)} className="absolute top-6 right-6 text-slate-300 hover:text-slate-900"><XIcon size={24}/></button>
-              <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center text-white mb-6 mx-auto shrink-0"><CalculatorIcon size={32}/></div>
-              <h2 className="font-black text-lg lg:text-xl uppercase mb-6 tracking-tight">Resumen de Ticket</h2>
-              <div className="space-y-4 border-y py-6 mb-8 text-left text-xs uppercase font-bold">
+        <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+           <div className="bg-white w-full max-w-sm rounded-[2rem] p-5 lg:p-7 shadow-2xl relative text-center max-h-[90vh] overflow-y-auto no-scrollbar-mobile">
+              <button onClick={() => setShowSummary(null)} className="absolute top-4 right-4 text-slate-300 hover:text-slate-900 transition-all"><XIcon size={20}/></button>
+              <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white mb-3 mx-auto shrink-0"><CalculatorIcon size={24}/></div>
+              <h2 className="font-black text-sm lg:text-base uppercase mb-3 tracking-tight">Resumen de Ticket</h2>
+              <div className="space-y-2 border-y py-3 mb-4 text-left text-[10px] uppercase font-bold">
                  <div className="flex justify-between gap-4"><span>Pedido:</span><span className="text-slate-900">#{showSummary.order_number}</span></div>
                  <div className="flex justify-between gap-4"><span>Cliente:</span><span className="text-slate-900 truncate">{appData.clients.find(c => c.id === showSummary.client_id)?.name}</span></div>
                  <div className="flex justify-between gap-4"><span>Tipo:</span><span className="text-slate-900">{appData.categories.find(c => c.id === showSummary.category_id)?.name}</span></div>
                  <div className="flex justify-between gap-4"><span>Medidas:</span><span className="text-slate-900">{showSummary.width}x{showSummary.height} CM</span></div>
                  <div className="flex justify-between gap-4"><span>Cantidad:</span><span className="text-slate-900">{showSummary.quantity} u.</span></div>
-                 <div className="flex justify-between pt-4 border-t gap-4"><span className="text-indigo-600 font-black">Total:</span><span className="text-indigo-600 text-lg lg:text-xl font-black">${showSummary.total_price.toLocaleString()}</span></div>
+                 <div className="flex justify-between pt-2 border-t gap-4 mt-1"><span className="text-indigo-600 font-black">Total:</span><span className="text-indigo-600 text-base font-black">${showSummary.total_price.toLocaleString()}</span></div>
                  <div className="flex justify-between text-emerald-600 gap-4"><span>Seña:</span><span>${showSummary.deposit.toLocaleString()}</span></div>
                  <div className="flex justify-between text-rose-500 font-black gap-4"><span>Saldo:</span><span>${showSummary.balance.toLocaleString()}</span></div>
               </div>
@@ -780,8 +807,8 @@ const App: React.FC = () => {
                              `*Seña:* $${showSummary.deposit.toLocaleString()}\n` +
                              `*Saldo:* $${showSummary.balance.toLocaleString()}`;
                 window.open(`https://wa.me/${c?.phone.replace(/\D/g,'')}?text=${encodeURIComponent(text)}`, '_blank');
-              }} className="w-full bg-emerald-500 text-white py-4 rounded-xl font-black flex items-center justify-center gap-3 shadow-xl uppercase text-[10px]">
-                <MessageCircleIcon size={18}/> WhatsApp
+              }} className="w-full bg-emerald-500 text-white py-3 rounded-xl font-black flex items-center justify-center gap-2 shadow-lg uppercase text-[9px]">
+                <MessageCircleIcon size={16}/> Enviar WhatsApp
               </button>
            </div>
         </div>
