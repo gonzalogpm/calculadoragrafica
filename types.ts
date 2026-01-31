@@ -40,7 +40,7 @@ export interface Client {
   name: string;
   phone: string;
   address: string;
-  created_at: number;
+  created_at: string;
 }
 
 export interface Category {
@@ -67,5 +67,5 @@ export interface Order {
   deposit: number; // Seña
   balance: number; // Restante
   status_id: string;
-  created_at: number;
+  created_at: string;
 }
