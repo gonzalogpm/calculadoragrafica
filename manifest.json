@@ -3,7 +3,7 @@
   "name": "CreaStickers Pro",
   "short_name": "CreaStickers",
   "description": "Sistema de gestión y optimización para gráficas.",
-  "start_url": "./index.html",
+  "start_url": ".",
   "display": "standalone",
   "background_color": "#f8fafc",
   "theme_color": "#6366f1",
