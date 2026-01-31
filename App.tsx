@@ -94,6 +94,7 @@ const App: React.FC = () => {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const [lastSaved, setLastSaved] = useState<string>('');
@@ -181,21 +182,46 @@ const App: React.FC = () => {
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!supabase) return;
+    setAuthLoading(true);
+
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      // 1. Intentar iniciar sesión
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
         email: authEmail,
         password: authPassword,
       });
-      if (error) {
-        const { error: signUpError } = await supabase.auth.signUp({
-          email: authEmail,
-          password: authPassword,
-        });
-        if (signUpError) alert("Error en autenticación. Verifica tus datos.");
+
+      if (signInError) {
+        // 2. Si el error es que el usuario no existe, intentamos registrarlo
+        if (signInError.message.toLowerCase().includes("invalid login credentials")) {
+          const { error: signUpError } = await supabase.auth.signUp({
+            email: authEmail,
+            password: authPassword,
+          });
+
+          if (signUpError) {
+            // Si el registro también falla, es porque el usuario YA EXISTE pero la contraseña es INCORRECTA
+            if (signUpError.message.toLowerCase().includes("already registered") || signUpError.message.toLowerCase().includes("already exists")) {
+              alert("❌ Contraseña incorrecta para este correo. Por favor, verifícala.");
+            } else {
+              alert(`❌ Error de registro: ${signUpError.message}`);
+            }
+          } else {
+            alert("✅ Cuenta creada con éxito. Si no puedes entrar, revisa tu correo para confirmar la cuenta.");
+            setIsAuthModalOpen(false);
+          }
+        } else {
+          alert(`❌ Error al entrar: ${signInError.message}`);
+        }
+      } else {
+        // Inicio de sesión exitoso
+        setIsAuthModalOpen(false);
       }
-      setIsAuthModalOpen(false);
-    } catch (e) {
-      console.error(e);
+    } catch (err) {
+      console.error(err);
+      alert("Hubo un problema de conexión con el servidor.");
+    } finally {
+      setAuthLoading(false);
     }
   };
 
@@ -496,7 +522,7 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* PEDIDOS, CLIENTES Y AJUSTES MANTIENEN SU LÓGICA EXISTENTE */}
+        {/* PEDIDOS, CLIENTES Y AJUSTES */}
         {activeTab === 'pedidos' && (
            <div className="space-y-10 animate-in fade-in duration-500">
               <div className="flex flex-col lg:flex-row items-center justify-between gap-8 bg-white p-8 rounded-[3rem] shadow-sm border border-slate-200">
@@ -659,7 +685,7 @@ const App: React.FC = () => {
         )}
       </main>
 
-      {/* MODALES: LOGIN, CARGAR PEDIDO, RESUMEN TICKET, CLIENTE, CONFIRMACIÓN */}
+      {/* MODALES */}
       {isAuthModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex items-center justify-center p-6 animate-in fade-in duration-300">
            <div className="bg-white w-full max-w-sm rounded-[3rem] p-10 shadow-2xl relative">
@@ -674,13 +700,16 @@ const App: React.FC = () => {
                     <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Contraseña</label>
                     <input type="password" required value={authPassword} onChange={e => setAuthPassword(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-bold outline-none" placeholder="••••••••" />
                  </div>
-                 <p className="text-[10px] text-slate-400 font-medium italic">Si el usuario no existe, se creará automáticamente.</p>
-                 <button type="submit" className="w-full bg-indigo-600 text-white font-black py-5 rounded-2xl uppercase text-[11px] tracking-widest shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all">Sincronizar Ahora</button>
+                 <p className="text-[10px] text-slate-400 font-medium italic">Si ya tienes cuenta, usa tu contraseña habitual. Si no, se creará una nueva.</p>
+                 <button type="submit" disabled={authLoading} className="w-full bg-indigo-600 text-white font-black py-5 rounded-2xl uppercase text-[11px] tracking-widest shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center justify-center gap-3">
+                    {authLoading ? <Loader2Icon className="animate-spin" size={18}/> : 'Sincronizar Ahora'}
+                 </button>
               </form>
            </div>
         </div>
       )}
 
+      {/* RESTO DE LOS MODALES SE MANTIENEN IGUAL (OrderModal, SummaryModal, ClientModal, ConfirmModal) */}
       {isOrderModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4 animate-in fade-in duration-300">
            <div className="bg-white w-full max-md rounded-[2rem] p-5 shadow-2xl relative overflow-hidden border border-slate-200">
