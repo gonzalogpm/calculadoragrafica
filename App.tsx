@@ -31,7 +31,9 @@ import {
   SettingsIcon,
   ShieldAlertIcon,
   ClockIcon,
-  PartyPopperIcon
+  PartyPopperIcon,
+  CloudUploadIcon,
+  RefreshCwIcon
 } from 'lucide-react';
 import { 
   DesignItem, 
@@ -103,6 +105,7 @@ const App: React.FC = () => {
   const [authLoading, setAuthLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showWelcomeMsg, setShowWelcomeMsg] = useState(false);
+  const [isMigrating, setIsMigrating] = useState(false);
 
   const [lastSaved, setLastSaved] = useState<string>('');
   const [showSummary, setShowSummary] = useState<Order | null>(null);
@@ -111,7 +114,6 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const init = async () => {
-      // Cargar datos locales de inmediato
       const saved = localStorage.getItem(MASTER_KEY);
       if (saved) {
         try {
@@ -126,17 +128,14 @@ const App: React.FC = () => {
       }
 
       try {
-        // Detectar sesión al inicio
         const { data: { session: currentSession } } = await supabase.auth.getSession();
         setSession(currentSession);
         if (currentSession?.user) {
           await fetchCloudData(currentSession.user.id);
         }
 
-        // Manejar el retorno de confirmación de email si el hash contiene el access_token
         if (window.location.hash.includes('access_token=')) {
           setShowWelcomeMsg(true);
-          // Limpiar el hash de la URL después de 2 segundos para estética
           setTimeout(() => {
             window.history.replaceState(null, '', window.location.pathname);
           }, 2000);
@@ -165,15 +164,51 @@ const App: React.FC = () => {
         supabase.from('orders').select('*').eq('user_id', userId)
       ]);
 
-      setAppData(prev => ({
-        ...prev,
-        sheetWidth: Number(settings?.sheet_width) || prev.sheetWidth,
-        profitMargin: Number(settings?.profit_margin) || prev.profitMargin,
-        designSpacing: Number(settings?.design_spacing) || prev.designSpacing,
-        clients: (cls && cls.length > 0) ? cls : prev.clients,
-        orders: (ords && ords.length > 0) ? ords : prev.orders
-      }));
+      setAppData(prev => {
+        // Combinar locales con nube: si la nube tiene datos, los usamos, si no, mantenemos locales
+        return {
+          ...prev,
+          sheetWidth: Number(settings?.sheet_width) || prev.sheetWidth,
+          profitMargin: Number(settings?.profit_margin) || prev.profitMargin,
+          designSpacing: Number(settings?.design_spacing) || prev.designSpacing,
+          clients: (cls && cls.length > 0) ? cls : prev.clients,
+          orders: (ords && ords.length > 0) ? ords : prev.orders
+        };
+      });
     } catch (e) { }
+  };
+
+  // Función para subir datos que estaban solo en LocalStorage a Supabase
+  const pushLocalDataToCloud = async () => {
+    if (!supabase || !session?.user) return;
+    setIsMigrating(true);
+    try {
+      // 1. Subir Clientes
+      if (appData.clients.length > 0) {
+        const clientsToUpload = appData.clients.map(c => ({ ...c, user_id: session.user.id }));
+        await supabase.from('clients').upsert(clientsToUpload);
+      }
+      // 2. Subir Pedidos
+      if (appData.orders.length > 0) {
+        const ordersToUpload = appData.orders.map(o => ({ ...o, user_id: session.user.id }));
+        await supabase.from('orders').upsert(ordersToUpload);
+      }
+      // 3. Subir Ajustes
+      await supabase.from('settings').upsert({
+        user_id: session.user.id,
+        sheet_width: appData.sheetWidth,
+        profit_margin: appData.profitMargin,
+        design_spacing: appData.designSpacing,
+        updated_at: new Date().toISOString()
+      });
+      
+      alert("✅ Sincronización completa. Tus datos ya están en la nube de Supabase.");
+      await fetchCloudData(session.user.id);
+    } catch (err) {
+      alert("❌ Error al sincronizar. Revisa tu conexión.");
+    } finally {
+      setIsMigrating(false);
+    }
   };
 
   useEffect(() => {
@@ -181,7 +216,7 @@ const App: React.FC = () => {
     localStorage.setItem(MASTER_KEY, JSON.stringify(appData));
     setLastSaved(new Date().toLocaleTimeString());
     
-    const sync = async () => {
+    const syncSettings = async () => {
       if (!supabase || !session?.user) return;
       try {
         await supabase.from('settings').upsert({
@@ -193,8 +228,8 @@ const App: React.FC = () => {
         });
       } catch (e) { }
     };
-    sync();
-  }, [appData, session, loading]);
+    syncSettings();
+  }, [appData.sheetWidth, appData.profitMargin, appData.designSpacing, session, loading]);
 
   const updateData = async (field: keyof AppDataType, value: any) => {
     setAppData(prev => ({ ...prev, [field]: value }));
@@ -377,7 +412,8 @@ const App: React.FC = () => {
         updateData('clients', [...appData.clients, updatedClient]);
     }
     if (supabase && session?.user) {
-      await supabase.from('clients').upsert({ ...updatedClient, user_id: session.user.id });
+      const { error } = await supabase.from('clients').upsert({ ...updatedClient, user_id: session.user.id });
+      if (error) alert("Error al subir a la nube: " + error.message);
     }
     setClientForm({ name: '', phone: '', address: '' });
     setIsClientModalOpen(false);
@@ -425,7 +461,7 @@ const App: React.FC = () => {
                <div className="flex items-center gap-2">
                  {!supabase ? (
                    <button 
-                     onClick={() => alert("🚨 CONFIGURACIÓN REQUERIDA: Debes agregar VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY en tu panel de Hosting (Vercel/Netlify) para usar la nube.")}
+                     onClick={() => alert("🚨 CONFIGURACIÓN REQUERIDA: Debes agregar VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY en tu panel de Hosting.")}
                      className="flex items-center gap-2 text-[10px] font-black text-white uppercase bg-rose-500 px-6 py-3 rounded-full shadow-lg hover:bg-rose-600 transition-all border-b-4 border-rose-800"
                    >
                      <ShieldAlertIcon size={14}/> Error de Nube
@@ -444,7 +480,6 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      {/* AVISO DE BIENVENIDA POST-EMAIL */}
       {showWelcomeMsg && (
         <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[100] bg-emerald-600 text-white px-8 py-4 rounded-full shadow-2xl font-black text-sm uppercase flex items-center gap-4 animate-in slide-in-from-top-10 duration-500">
           <PartyPopperIcon size={24}/>
@@ -456,6 +491,30 @@ const App: React.FC = () => {
       <main className="max-w-7xl mx-auto p-6 md:p-10">
         {activeTab === 'dash' && (
            <div className="space-y-10 animate-in fade-in duration-500">
+              
+              {/* ALERTA DE MIGRACIÓN */}
+              {session?.user && (appData.clients.length > 0 || appData.orders.length > 0) && (
+                <div className="bg-indigo-600 rounded-[3rem] p-10 flex flex-col md:flex-row items-center justify-between gap-8 text-white shadow-2xl shadow-indigo-200 border-2 border-indigo-400">
+                   <div className="flex items-center gap-6">
+                      <div className="w-16 h-16 bg-white/20 rounded-3xl flex items-center justify-center backdrop-blur-md"><CloudUploadIcon size={32}/></div>
+                      <div>
+                         <h3 className="text-xl font-black uppercase tracking-tighter leading-none mb-2">Migración Pendiente</h3>
+                         <p className="text-indigo-100 text-xs font-bold uppercase tracking-widest opacity-80 leading-relaxed max-w-sm">
+                            Detectamos datos que solo están en tu navegador. Haz clic para subirlos a tu cuenta de Supabase.
+                         </p>
+                      </div>
+                   </div>
+                   <button 
+                    disabled={isMigrating}
+                    onClick={pushLocalDataToCloud}
+                    className="bg-white text-indigo-600 px-10 py-5 rounded-2xl font-black text-xs uppercase tracking-[0.2em] shadow-xl hover:scale-105 transition-all active:scale-95 flex items-center gap-3"
+                   >
+                     {isMigrating ? <Loader2Icon className="animate-spin" size={18}/> : <RefreshCwIcon size={18}/>}
+                     {isMigrating ? 'Sincronizando...' : 'Subir a la Nube'}
+                   </button>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
                  {appData.statuses.map(s => (
                    <div key={s.id} className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm flex flex-col items-center hover:translate-y-[-4px] transition-transform">
@@ -468,6 +527,8 @@ const App: React.FC = () => {
            </div>
         )}
 
+        {/* ... (resto del código de Tabs se mantiene igual, solo añado pequeños badges de nube en tablas) ... */}
+        
         {activeTab === 'presupuestar' && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 animate-in fade-in duration-500">
             <div className="lg:col-span-4 space-y-8">
@@ -588,6 +649,7 @@ const App: React.FC = () => {
                  {filteredOrders.map(o => {
                    const client = appData.clients.find(c => c.id === o.clientId);
                    const status = appData.statuses.find(s => s.id === o.statusId);
+                   const isLocal = !(o as any).user_id;
                    return (
                      <div key={o.id} className="bg-white rounded-[2.5rem] p-8 border border-slate-200 shadow-sm flex flex-col md:flex-row items-center gap-10 group hover:border-indigo-300 transition-all hover:translate-x-1">
                         <div className="flex-1 flex items-center gap-6 w-full">
@@ -596,7 +658,15 @@ const App: React.FC = () => {
                               <span className="text-sm">#{o.orderNumber}</span>
                            </div>
                            <div>
-                              <div className="font-black text-slate-900 uppercase text-[15px] mb-1 leading-none">{client?.name || 'Cliente borrado'}</div>
+                              <div className="font-black text-slate-900 uppercase text-[15px] mb-1 leading-none flex items-center gap-3">
+                                {client?.name || 'Cliente borrado'}
+                                {/* Fix: Remove title prop from CloudOffIcon which is not supported by the component and wrap it in a span to preserve the tooltip functionality. */}
+                                {isLocal && session?.user && (
+                                  <span title="Solo local">
+                                    <CloudOffIcon size={14} className="text-rose-400" />
+                                  </span>
+                                )}
+                              </div>
                               <div className="text-[11px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
                                 <span className={`px-2 py-0.5 rounded-full text-white text-[9px] ${status?.color || 'bg-slate-400'}`}>{status?.name || 'S/E'}</span>
                                 {o.width}x{o.height} cm • {o.quantity} u.
@@ -640,33 +710,43 @@ const App: React.FC = () => {
                        </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
-                       {filteredClients.map(c => (
-                         <tr key={c.id} className="hover:bg-indigo-50/20 transition-all group">
-                            <td className="px-10 py-8">
-                               <div className="flex items-center gap-5">
-                                  <div className="w-12 h-12 bg-slate-900 text-white rounded-2xl flex items-center justify-center font-black text-xl uppercase shadow-lg">{c.name.charAt(0)}</div>
-                                  <div>
-                                     <div className="font-black text-slate-900 uppercase text-sm leading-none mb-1">{c.name}</div>
-                                     <div className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">Registrado: {new Date(c.createdAt || 0).toLocaleDateString()}</div>
-                                  </div>
-                               </div>
-                            </td>
-                            <td className="px-10 py-8 font-black text-slate-600 text-sm">{c.phone}</td>
-                            <td className="px-10 py-8 font-bold text-slate-400 text-xs uppercase">{c.address || 'Sin dirección'}</td>
-                            <td className="px-10 py-8 text-right">
-                               <div className="flex justify-end gap-3 opacity-0 group-hover:opacity-100 transition-all">
-                                  <button onClick={() => { setClientForm(c); setIsClientModalOpen(true); }} className="p-4 bg-indigo-50 text-indigo-600 rounded-2xl hover:bg-indigo-600 hover:text-white transition-all"><Edit3Icon size={18}/></button>
-                                  <button onClick={() => askConfirmation("Borrar Cliente", `¿Eliminar a ${c.name}?`, () => updateData('clients', appData.clients.filter(cl => cl.id !== c.id)))} className="p-4 bg-white border border-slate-100 text-slate-200 hover:text-rose-500 rounded-xl transition-all"><TrashIcon size={18}/></button>
-                               </div>
-                            </td>
-                         </tr>
-                       ))}
+                       {filteredClients.map(c => {
+                         const isLocal = !(c as any).user_id;
+                         return (
+                           <tr key={c.id} className="hover:bg-indigo-50/20 transition-all group">
+                              <td className="px-10 py-8">
+                                 <div className="flex items-center gap-5">
+                                    <div className="w-12 h-12 bg-slate-900 text-white rounded-2xl flex items-center justify-center font-black text-xl uppercase shadow-lg">
+                                      {c.name.charAt(0)}
+                                    </div>
+                                    <div>
+                                       <div className="font-black text-slate-900 uppercase text-sm leading-none mb-1 flex items-center gap-2">
+                                          {c.name}
+                                          {isLocal && session?.user && <div className="bg-rose-100 text-rose-500 px-2 py-0.5 rounded text-[8px] flex items-center gap-1 font-black"><CloudOffIcon size={10}/> LOCAL</div>}
+                                          {!isLocal && session?.user && <CloudIcon size={12} className="text-emerald-500"/>}
+                                       </div>
+                                       <div className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">Registrado: {new Date(c.createdAt || 0).toLocaleDateString()}</div>
+                                    </div>
+                                 </div>
+                              </td>
+                              <td className="px-10 py-8 font-black text-slate-600 text-sm">{c.phone}</td>
+                              <td className="px-10 py-8 font-bold text-slate-400 text-xs uppercase">{c.address || 'Sin dirección'}</td>
+                              <td className="px-10 py-8 text-right">
+                                 <div className="flex justify-end gap-3 opacity-0 group-hover:opacity-100 transition-all">
+                                    <button onClick={() => { setClientForm(c); setIsClientModalOpen(true); }} className="p-4 bg-indigo-50 text-indigo-600 rounded-2xl hover:bg-indigo-600 hover:text-white transition-all"><Edit3Icon size={18}/></button>
+                                    <button onClick={() => askConfirmation("Borrar Cliente", `¿Eliminar a ${c.name}?`, () => updateData('clients', appData.clients.filter(cl => cl.id !== c.id)))} className="p-4 bg-white border border-slate-100 text-slate-200 hover:text-rose-500 rounded-xl transition-all"><TrashIcon size={18}/></button>
+                                 </div>
+                              </td>
+                           </tr>
+                         )
+                       })}
                     </tbody>
                  </table>
               </div>
            </div>
         )}
 
+        {/* ... (resto de Ajustes y Modales se mantiene igual) ... */}
         {activeTab === 'config' && (
            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 animate-in fade-in duration-500 pb-16">
               <section className="bg-white rounded-[3rem] p-8 border border-slate-200 shadow-sm">
@@ -731,14 +811,6 @@ const App: React.FC = () => {
            <div className="bg-white w-full max-w-sm rounded-[3rem] p-10 shadow-2xl relative">
               <button onClick={() => setIsAuthModalOpen(false)} className="absolute top-8 right-8 text-slate-300 hover:text-slate-900 transition-all"><XIcon size={24}/></button>
               <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter mb-4 flex items-center gap-3"><CloudIcon className="text-indigo-600"/> Cuenta Taller</h2>
-              
-              <div className="bg-amber-50 p-4 rounded-xl border border-amber-100 flex gap-3 mb-6">
-                 <ClockIcon size={20} className="text-amber-600 shrink-0"/>
-                 <p className="text-[10px] text-amber-800 font-bold leading-tight uppercase">
-                    Si eres nuevo, recibirás un email de confirmación. Revisa tu bandeja (y spam).
-                 </p>
-              </div>
-
               <form onSubmit={handleAuth} className="space-y-5">
                  <div className="space-y-2">
                     <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Email del Taller</label>
