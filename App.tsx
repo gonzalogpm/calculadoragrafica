@@ -30,7 +30,8 @@ import {
   AlertCircleIcon,
   SettingsIcon,
   ShieldAlertIcon,
-  ClockIcon
+  ClockIcon,
+  PartyPopperIcon
 } from 'lucide-react';
 import { 
   DesignItem, 
@@ -101,6 +102,7 @@ const App: React.FC = () => {
   const [authPassword, setAuthPassword] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [showWelcomeMsg, setShowWelcomeMsg] = useState(false);
 
   const [lastSaved, setLastSaved] = useState<string>('');
   const [showSummary, setShowSummary] = useState<Order | null>(null);
@@ -109,12 +111,13 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const init = async () => {
+      // Cargar datos locales de inmediato
       const saved = localStorage.getItem(MASTER_KEY);
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
           setAppData(prev => ({ ...prev, ...parsed }));
-        } catch (e) { console.error("Error caché local"); }
+        } catch (e) { }
       }
 
       if (!supabase) {
@@ -123,10 +126,22 @@ const App: React.FC = () => {
       }
 
       try {
+        // Detectar sesión al inicio
         const { data: { session: currentSession } } = await supabase.auth.getSession();
         setSession(currentSession);
-        if (currentSession?.user) await fetchCloudData(currentSession.user.id);
-      } catch (e) { console.error("Error Auth Supabase"); }
+        if (currentSession?.user) {
+          await fetchCloudData(currentSession.user.id);
+        }
+
+        // Manejar el retorno de confirmación de email si el hash contiene el access_token
+        if (window.location.hash.includes('access_token=')) {
+          setShowWelcomeMsg(true);
+          // Limpiar el hash de la URL después de 2 segundos para estética
+          setTimeout(() => {
+            window.history.replaceState(null, '', window.location.pathname);
+          }, 2000);
+        }
+      } catch (e) { }
       setLoading(false);
     };
 
@@ -155,10 +170,10 @@ const App: React.FC = () => {
         sheetWidth: Number(settings?.sheet_width) || prev.sheetWidth,
         profitMargin: Number(settings?.profit_margin) || prev.profitMargin,
         designSpacing: Number(settings?.design_spacing) || prev.designSpacing,
-        clients: cls || prev.clients,
-        orders: ords || prev.orders
+        clients: (cls && cls.length > 0) ? cls : prev.clients,
+        orders: (ords && ords.length > 0) ? ords : prev.orders
       }));
-    } catch (e) { console.error("Error Sync Nube"); }
+    } catch (e) { }
   };
 
   useEffect(() => {
@@ -191,21 +206,18 @@ const App: React.FC = () => {
     setAuthLoading(true);
 
     try {
-      // Intentar login directamente
       const { data, error: signInError } = await supabase.auth.signInWithPassword({
         email: authEmail,
         password: authPassword,
       });
 
       if (signInError) {
-        // Manejo específico del error de límite de tasa
         if (signInError.message.toLowerCase().includes("rate limit")) {
-          alert("⏳ Límite de intentos excedido. Por seguridad, el servidor te ha bloqueado temporalmente. Por favor, espera 10 minutos y vuelve a intentar.");
+          alert("⏳ Límite de intentos excedido. Por favor, espera 10 minutos.");
           setAuthLoading(false);
           return;
         }
 
-        // Si no existe el usuario, intentar registro
         if (signInError.message.toLowerCase().includes("invalid login credentials")) {
           const { error: signUpError } = await supabase.auth.signUp({
             email: authEmail,
@@ -214,22 +226,22 @@ const App: React.FC = () => {
 
           if (signUpError) {
              if (signUpError.message.toLowerCase().includes("rate limit")) {
-                alert("⏳ Límite de registro excedido. Por favor, espera unos minutos antes de intentar crear una cuenta nueva.");
+                alert("⏳ Límite excedido. Espera unos minutos.");
              } else {
                 alert(`❌ Error: ${signUpError.message}`);
              }
           } else {
-            alert("✅ ¡Cuenta creada! Ya puedes sincronizar.");
+            alert("✅ ¡Revisa tu email para confirmar la cuenta!");
             setIsAuthModalOpen(false);
           }
         } else {
-          alert(`❌ Error de acceso: ${signInError.message}`);
+          alert(`❌ Error: ${signInError.message}`);
         }
       } else {
         setIsAuthModalOpen(false);
       }
     } catch (err) {
-      alert("Error inesperado en la conexión.");
+      alert("Error de conexión.");
     } finally {
       setAuthLoading(false);
     }
@@ -431,6 +443,15 @@ const App: React.FC = () => {
           </div>
         </div>
       </header>
+
+      {/* AVISO DE BIENVENIDA POST-EMAIL */}
+      {showWelcomeMsg && (
+        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[100] bg-emerald-600 text-white px-8 py-4 rounded-full shadow-2xl font-black text-sm uppercase flex items-center gap-4 animate-in slide-in-from-top-10 duration-500">
+          <PartyPopperIcon size={24}/>
+          ¡Cuenta confirmada! Ya estás conectado a la nube.
+          <button onClick={() => setShowWelcomeMsg(false)} className="bg-white/20 p-1 rounded-full"><XIcon size={16}/></button>
+        </div>
+      )}
 
       <main className="max-w-7xl mx-auto p-6 md:p-10">
         {activeTab === 'dash' && (
@@ -714,7 +735,7 @@ const App: React.FC = () => {
               <div className="bg-amber-50 p-4 rounded-xl border border-amber-100 flex gap-3 mb-6">
                  <ClockIcon size={20} className="text-amber-600 shrink-0"/>
                  <p className="text-[10px] text-amber-800 font-bold leading-tight uppercase">
-                    Si recibes un error de "Límite Excedido", espera 10 minutos para volver a intentar. Es una protección automática del servidor.
+                    Si eres nuevo, recibirás un email de confirmación. Revisa tu bandeja (y spam).
                  </p>
               </div>
 
