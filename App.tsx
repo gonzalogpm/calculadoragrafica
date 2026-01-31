@@ -5,7 +5,7 @@ import {
   UsersIcon, PackageIcon, SearchIcon, Share2Icon, MessageCircleIcon, 
   Edit3Icon, XIcon, AlertTriangleIcon, 
   CloudIcon, LogOutIcon, Loader2Icon, RulerIcon, 
-  SmartphoneIcon, DownloadIcon, BellIcon, CloudUploadIcon
+  SmartphoneIcon, DownloadIcon, BellIcon, CloudUploadIcon, PercentIcon
 } from 'lucide-react';
 import { 
   DesignItem, CostTier, QuantityDiscount, CalculationResult, 
@@ -609,6 +609,25 @@ const App: React.FC = () => {
                       <div key={tier.id} className="flex gap-2 items-center bg-slate-50 p-3 rounded-xl border group">
                          <input type="number" value={tier.minLargo} onChange={e => { const nt = [...appData.costTiers]; nt[idx].minLargo = Number(e.target.value); updateData('costTiers', nt); }} className="w-10 bg-white rounded p-1 text-[9px] font-black text-center" /><span className="text-slate-300">→</span><input type="number" value={tier.maxLargo} onChange={e => { const nt = [...appData.costTiers]; nt[idx].maxLargo = Number(e.target.value); updateData('costTiers', nt); }} className="w-10 bg-white rounded p-1 text-[9px] font-black text-center" /><div className="flex-1 text-right font-black text-indigo-600 text-xs">$ <input type="number" value={tier.precioPorCm} onChange={e => { const nt = [...appData.costTiers]; nt[idx].precioPorCm = Number(e.target.value); updateData('costTiers', nt); }} className="w-14 bg-transparent text-right outline-none" /></div>
                          <button onClick={() => updateData('costTiers', appData.costTiers.filter(t => t.id !== tier.id))} className="text-slate-200 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-all"><TrashIcon size={14}/></button>
+                      </div>
+                    ))}
+                 </div>
+              </section>
+              <section className="bg-white rounded-[2rem] p-8 border shadow-sm">
+                 <div className="flex items-center justify-between mb-8">
+                    <h2 className="text-slate-900 font-black text-[10px] uppercase tracking-widest flex items-center gap-2"><PercentIcon size={16}/> Descuentos</h2>
+                    <button onClick={() => updateData('quantityDiscounts', [...(appData.quantityDiscounts || []), { id: generateUUID(), minQty: 0, maxQty: 0, discountPercent: 0 }])} className="p-2 bg-indigo-50 text-indigo-600 rounded-lg"><PlusIcon size={16}/></button>
+                 </div>
+                 <div className="space-y-4">
+                    {(appData.quantityDiscounts || []).map((q, idx) => (
+                      <div key={q.id} className="flex gap-2 items-center bg-slate-50 p-3 rounded-xl border group">
+                         <input type="number" placeholder="Min" value={q.minQty} onChange={e => { const nq = [...appData.quantityDiscounts]; nq[idx].minQty = Number(e.target.value); updateData('quantityDiscounts', nq); }} className="w-10 bg-white rounded p-1 text-[9px] font-black text-center" />
+                         <span className="text-slate-300">→</span>
+                         <input type="number" placeholder="Max" value={q.maxQty} onChange={e => { const nq = [...appData.quantityDiscounts]; nq[idx].maxQty = Number(e.target.value); updateData('quantityDiscounts', nq); }} className="w-10 bg-white rounded p-1 text-[9px] font-black text-center" />
+                         <div className="flex-1 text-right font-black text-indigo-600 text-xs">
+                           <input type="number" value={q.discountPercent} onChange={e => { const nq = [...appData.quantityDiscounts]; nq[idx].discountPercent = Number(e.target.value); updateData('quantityDiscounts', nq); }} className="w-10 bg-transparent text-right outline-none" /> %
+                         </div>
+                         <button onClick={() => updateData('quantityDiscounts', appData.quantityDiscounts.filter(item => item.id !== q.id))} className="text-slate-200 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-all"><TrashIcon size={14}/></button>
                       </div>
                     ))}
                  </div>
