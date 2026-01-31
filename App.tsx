@@ -25,7 +25,8 @@ import {
   LogInIcon,
   LogOutIcon,
   Loader2Icon,
-  RulerIcon
+  RulerIcon,
+  CloudOffIcon
 } from 'lucide-react';
 import { 
   DesignItem, 
@@ -181,18 +182,19 @@ const App: React.FC = () => {
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!supabase) return;
+    if (!supabase) {
+      alert("⚠️ Supabase no está configurado. Revisa tus variables de entorno.");
+      return;
+    }
     setAuthLoading(true);
 
     try {
-      // 1. Intentar iniciar sesión
       const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
         email: authEmail,
         password: authPassword,
       });
 
       if (signInError) {
-        // 2. Si el error es que el usuario no existe, intentamos registrarlo
         if (signInError.message.toLowerCase().includes("invalid login credentials")) {
           const { error: signUpError } = await supabase.auth.signUp({
             email: authEmail,
@@ -200,21 +202,19 @@ const App: React.FC = () => {
           });
 
           if (signUpError) {
-            // Si el registro también falla, es porque el usuario YA EXISTE pero la contraseña es INCORRECTA
             if (signUpError.message.toLowerCase().includes("already registered") || signUpError.message.toLowerCase().includes("already exists")) {
               alert("❌ Contraseña incorrecta para este correo. Por favor, verifícala.");
             } else {
               alert(`❌ Error de registro: ${signUpError.message}`);
             }
           } else {
-            alert("✅ Cuenta creada con éxito. Si no puedes entrar, revisa tu correo para confirmar la cuenta.");
+            alert("✅ Cuenta creada con éxito. Revisa tu correo para confirmar si es necesario.");
             setIsAuthModalOpen(false);
           }
         } else {
           alert(`❌ Error al entrar: ${signInError.message}`);
         }
       } else {
-        // Inicio de sesión exitoso
         setIsAuthModalOpen(false);
       }
     } catch (err) {
@@ -388,15 +388,21 @@ const App: React.FC = () => {
             <button onClick={() => setActiveTab('config')} className={`px-5 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'config' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Ajustes</button>
           </nav>
 
-          <div className="flex items-center gap-4">
-             {session ? (
-               <button onClick={() => supabase?.auth.signOut()} className="flex items-center gap-2 text-[10px] font-black text-emerald-500 uppercase bg-emerald-50 px-4 py-2 rounded-full hover:bg-emerald-100 transition-all">
-                 <CloudIcon size={14}/> {session.user.email.split('@')[0]} <LogOutIcon size={12}/>
+          <div className="flex items-center gap-4 min-w-[150px] justify-end">
+             {session?.user ? (
+               <button onClick={() => supabase?.auth.signOut()} className="flex items-center gap-2 text-[10px] font-black text-emerald-600 uppercase bg-emerald-50 border border-emerald-100 px-4 py-2.5 rounded-full hover:bg-emerald-100 transition-all shadow-sm">
+                 <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                 {session.user.email?.split('@')[0] || 'Usuario'} <LogOutIcon size={12}/>
                </button>
              ) : (
-               <button onClick={() => setIsAuthModalOpen(true)} className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase bg-slate-100 px-4 py-2 rounded-full hover:bg-indigo-600 hover:text-white transition-all shadow-sm">
+               <button onClick={() => setIsAuthModalOpen(true)} className="flex items-center gap-2 text-[10px] font-black text-slate-500 uppercase bg-white border-2 border-slate-200 px-5 py-2.5 rounded-full hover:bg-indigo-600 hover:text-white hover:border-indigo-600 transition-all shadow-sm">
                  <LogInIcon size={14}/> Sincronizar Nube
                </button>
+             )}
+             {!supabase && (
+               <div className="flex items-center gap-1 text-[9px] font-black text-amber-500 uppercase bg-amber-50 px-3 py-1.5 rounded-full border border-amber-100">
+                 <CloudOffIcon size={12}/> Modo Local
+               </div>
              )}
           </div>
         </div>
@@ -709,7 +715,6 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* RESTO DE LOS MODALES SE MANTIENEN IGUAL (OrderModal, SummaryModal, ClientModal, ConfirmModal) */}
       {isOrderModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4 animate-in fade-in duration-300">
            <div className="bg-white w-full max-md rounded-[2rem] p-5 shadow-2xl relative overflow-hidden border border-slate-200">
