@@ -388,7 +388,6 @@ const App: React.FC = () => {
       <main className="max-w-7xl mx-auto p-4 lg:p-10">
         {activeTab === 'dash' && (
            <div className="space-y-8">
-              {/* Dashboard Stats */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
                  {(appData.statuses || []).map(s => (
                    <div key={s.id} className="bg-white p-6 md:p-8 rounded-[2.5rem] border shadow-sm flex flex-col items-center group transition-all hover:border-indigo-200">
@@ -399,7 +398,6 @@ const App: React.FC = () => {
                  ))}
               </div>
 
-              {/* Utility Row (Backup & Install) */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {session?.user && ((appData.clients?.length || 0) > 0 || (appData.orders?.length || 0) > 0) && (
                   <div className="bg-indigo-600 rounded-[2rem] p-4 md:p-5 flex items-center justify-between gap-3 text-white shadow-lg">
@@ -434,8 +432,8 @@ const App: React.FC = () => {
 
         {activeTab === 'presupuestar' && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
-            <div className="lg:col-span-4 space-y-8">
-              <section className="bg-white rounded-[2rem] p-8 border shadow-sm">
+            <div className="lg:col-span-4 space-y-6">
+              <section className="bg-white rounded-[2rem] p-6 md:p-8 border shadow-sm">
                 <h2 className="text-slate-900 font-black text-sm uppercase tracking-widest flex items-center gap-3 mb-8"><Settings2Icon size={18}/> Configuración</h2>
                 <div className="space-y-6">
                    <div className="grid grid-cols-2 gap-4">
@@ -445,7 +443,7 @@ const App: React.FC = () => {
                    <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase ml-2">Espaciado (cm)</label><input type="number" step="0.1" value={appData.designSpacing} onChange={e => updateData('designSpacing', Number(e.target.value))} className="w-full bg-slate-50 p-4 rounded-xl font-bold border-none" /></div>
                 </div>
               </section>
-              <section className="bg-white rounded-[2rem] p-8 border shadow-sm">
+              <section className="bg-white rounded-[2rem] p-6 md:p-8 border shadow-sm">
                 <h2 className="text-indigo-600 font-black text-sm uppercase tracking-widest flex items-center gap-3 mb-8"><PlusIcon size={18}/> Agregar Diseño</h2>
                 <div className="space-y-6">
                    <input type="text" placeholder="Nombre..." value={newDesign.name} onChange={e => setNewDesign({...newDesign, name: e.target.value})} className="w-full bg-slate-50 p-4 rounded-xl font-bold border-none" />
@@ -457,16 +455,39 @@ const App: React.FC = () => {
                    <button onClick={addDesign} className="w-full bg-indigo-600 text-white font-black py-4 rounded-xl uppercase text-[11px] shadow-xl hover:bg-indigo-700 transition-all">Optimizar</button>
                 </div>
               </section>
+              
+              {/* Nuevo bloque de resumen de Largo Total para Taller */}
+              <section className="bg-slate-900 rounded-[2rem] p-6 md:p-8 text-white shadow-xl border-l-8 border-indigo-500">
+                 <div className="flex items-center gap-3 mb-4 opacity-70">
+                    <RulerIcon size={20}/>
+                    <h2 className="font-black text-[10px] uppercase tracking-[0.2em]">Cálculo de Pliego</h2>
+                 </div>
+                 <div className="space-y-1">
+                    <div className="text-4xl font-black text-white">{packResult.totalLength.toFixed(1)} <span className="text-lg opacity-50 uppercase">cm</span></div>
+                    <p className="text-indigo-400 font-bold text-[10px] uppercase tracking-widest">Largo Total Requerido</p>
+                 </div>
+                 <div className="mt-6 pt-6 border-t border-white/10 flex justify-between items-end">
+                    <div>
+                       <div className="text-xl font-black text-emerald-400">${(packResult.totalLength * currentPricePerCm).toLocaleString()}</div>
+                       <p className="text-[9px] font-bold text-white/40 uppercase">Costo Base Taller</p>
+                    </div>
+                    <div className="text-right">
+                       <div className="text-xs font-black text-indigo-300">${currentPricePerCm.toLocaleString()}</div>
+                       <p className="text-[9px] font-bold text-white/40 uppercase">Precio x CM</p>
+                    </div>
+                 </div>
+              </section>
             </div>
+            
             <div className="lg:col-span-8 space-y-10">
-               <section className="bg-white rounded-[2.5rem] p-10 border shadow-sm">
-                  <div className="flex items-center justify-between mb-10">
-                    <h2 className="font-black text-xl text-slate-900 flex items-center gap-4"><LayoutIcon className="text-indigo-500" size={24}/> Previsualización</h2>
-                    <div className="bg-slate-900 text-white px-6 py-2 rounded-xl font-black text-sm uppercase flex items-center gap-2">
-                       <RulerIcon size={18} className="text-indigo-400"/> {packResult.totalLength.toFixed(1)} cm
+               <section className="bg-white rounded-[2.5rem] p-6 md:p-10 border shadow-sm">
+                  <div className="flex items-center justify-between mb-8">
+                    <h2 className="font-black text-lg md:text-xl text-slate-900 flex items-center gap-4"><LayoutIcon className="text-indigo-500" size={24}/> Previsualización</h2>
+                    <div className="bg-slate-100 text-slate-900 px-4 py-1.5 rounded-xl font-black text-[10px] uppercase flex items-center gap-2">
+                       W: {appData.sheetWidth}cm
                     </div>
                   </div>
-                  <div className="bg-slate-950 rounded-[2rem] min-h-[400px] overflow-auto flex justify-center p-10 border-[10px] border-slate-900 shadow-inner custom-scrollbar">
+                  <div className="bg-slate-950 rounded-[2rem] min-h-[400px] overflow-auto flex justify-center p-6 md:p-10 border-[6px] md:border-[10px] border-slate-900 shadow-inner custom-scrollbar">
                      {packResult.totalLength > 0 ? (
                         <div className="bg-white relative shadow-2xl" style={{ width: `${appData.sheetWidth * 6}px`, height: `${packResult.totalLength * 6}px` }}>
                           {(packResult.packed || []).map(p => (
@@ -475,13 +496,13 @@ const App: React.FC = () => {
                             </div>
                           ))}
                         </div>
-                     ) : <div className="text-slate-800 opacity-20 uppercase font-black py-20 text-center">Ingresa diseños para visualizar el pliego</div>}
+                     ) : <div className="text-slate-800 opacity-20 uppercase font-black py-20 text-center text-sm">Carga diseños para generar el pliego</div>}
                   </div>
                </section>
-               <section className="bg-white rounded-[2.5rem] p-10 border shadow-sm overflow-x-auto custom-scrollbar">
+               <section className="bg-white rounded-[2.5rem] p-6 md:p-10 border shadow-sm overflow-x-auto custom-scrollbar">
                   <table className="w-full text-left">
                     <thead className="text-slate-400 text-[10px] font-black uppercase tracking-widest border-b">
-                       <tr><th className="pb-4">Diseño</th><th className="text-right pb-4">Costo Prod</th><th className="text-right pb-4">Venta Unit</th><th className="text-right pb-4 px-6">Total Venta</th></tr>
+                       <tr><th className="pb-4">Diseño</th><th className="text-right pb-4">Prod</th><th className="text-right pb-4">Venta U.</th><th className="text-right pb-4 px-6">Total Venta</th></tr>
                     </thead>
                     <tbody className="divide-y">
                       {(appData.designs || []).map(d => {
@@ -490,9 +511,9 @@ const App: React.FC = () => {
                         return (
                           <tr key={d.id} className="group">
                             <td className="py-6"><div className="font-black text-slate-900 uppercase text-xs">{d.name}</div><div className="text-[10px] font-bold text-slate-400 uppercase">{d.width}x{d.height} CM • {packedQty}/{d.quantity}</div></td>
-                            <td className="text-right font-black text-rose-500 text-sm">${res.unitProductionCost.toFixed(0)}</td>
-                            <td className="text-right font-black text-slate-900 text-sm">${res.unitClientPrice.toFixed(0)}</td>
-                            <td className="text-right py-6 px-6 font-black text-emerald-600 text-lg">
+                            <td className="text-right font-black text-rose-500 text-xs">${res.unitProductionCost.toFixed(0)}</td>
+                            <td className="text-right font-black text-slate-900 text-xs">${res.unitClientPrice.toFixed(0)}</td>
+                            <td className="text-right py-6 px-6 font-black text-emerald-600 text-base md:text-lg">
                                ${res.totalClientPrice.toFixed(0)}
                                <button onClick={() => updateData('designs', appData.designs.filter(i => i.id !== d.id))} className="ml-4 text-slate-200 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-all"><TrashIcon size={16}/></button>
                             </td>
@@ -501,7 +522,7 @@ const App: React.FC = () => {
                       })}
                     </tbody>
                     <tfoot className="bg-slate-50 border-t-2 border-slate-200">
-                        <tr><td className="py-6 px-4 font-black text-slate-400 uppercase text-[10px]">Total ({tableTotals.qty} u.)</td><td className="text-right font-black text-rose-600 text-xl">${tableTotals.prod.toFixed(0)}</td><td></td><td className="text-right py-6 px-6 font-black text-emerald-700 text-3xl">${tableTotals.client.toFixed(0)}</td></tr>
+                        <tr><td className="py-6 px-4 font-black text-slate-400 uppercase text-[10px]">Total ({tableTotals.qty} u.)</td><td className="text-right font-black text-rose-600 text-lg md:text-xl">${tableTotals.prod.toFixed(0)}</td><td></td><td className="text-right py-6 px-6 font-black text-emerald-700 text-2xl md:text-3xl">${tableTotals.client.toFixed(0)}</td></tr>
                     </tfoot>
                   </table>
                </section>
@@ -528,7 +549,7 @@ const App: React.FC = () => {
                    const s = (appData.statuses || []).find(st => st && st.id === o.status_id);
                    const cat = (appData.categories || []).find(cat => cat && cat.id === o.category_id);
                    return (
-                     <div key={o.id} className="bg-white rounded-[2rem] p-5 border shadow-sm flex flex-col md:flex-row items-stretch md:items-center gap-5 group transition-all hover:border-indigo-100">
+                     <div key={o.id} className="bg-white rounded-[2rem] p-5 border shadow-sm flex flex-col md:flex-row items-stretch md:items-center gap-5 group transition-all hover:border-indigo-100 overflow-hidden">
                         <div className="flex-1 flex items-center gap-4">
                            <div className={`w-12 h-12 rounded-2xl ${s?.color} text-white flex flex-col items-center justify-center font-black text-[8px] shrink-0`}><span className="opacity-60">Nº</span><span className="text-xs">#{o.order_number}</span></div>
                            <div className="min-w-0 flex-1">
@@ -556,7 +577,7 @@ const App: React.FC = () => {
                      </div>
                    );
                  })}
-                 {filteredOrders.length === 0 && <div className="text-center py-20 text-slate-300 font-black uppercase text-xs tracking-widest">No hay pedidos para mostrar</div>}
+                 {filteredOrders.length === 0 && <div className="text-center py-20 text-slate-300 font-black uppercase text-xs tracking-widest">No hay pedidos registrados</div>}
               </div>
            </div>
         )}
@@ -568,10 +589,9 @@ const App: React.FC = () => {
                  <button onClick={() => { setClientForm({}); setIsClientModalOpen(true); }} className="bg-slate-900 text-white px-6 py-4 rounded-xl font-black text-[10px] uppercase shadow-lg flex items-center gap-2 hover:scale-105 transition-all w-full md:w-auto justify-center"><PlusIcon size={16}/> Nuevo Cliente</button>
               </div>
               
-              {/* Clients Grid/List View for Mobile and Tablet */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-4">
                  {filteredClients.map(c => (
-                   <div key={c.id} className="bg-white rounded-[2rem] p-5 border shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-4 group transition-all hover:border-indigo-100">
+                   <div key={c.id} className="bg-white rounded-[2rem] p-5 border shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-4 group transition-all hover:border-indigo-100 overflow-hidden">
                       <div className="flex items-start lg:items-center gap-4">
                          <div className="w-12 h-12 bg-slate-900 text-white rounded-2xl flex items-center justify-center font-black text-sm shrink-0 uppercase">{c.name?.charAt(0)}</div>
                          <div className="min-w-0">
@@ -741,19 +761,19 @@ const App: React.FC = () => {
       )}
 
       {showSummary && (
-        <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-md z-[200] flex items-center justify-center p-6">
+        <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-md z-[200] flex items-center justify-center p-4">
            <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-8 md:p-10 shadow-2xl relative text-center">
               <button onClick={() => setShowSummary(null)} className="absolute top-6 right-6 text-slate-300 hover:text-slate-900 transition-all"><XIcon size={24}/></button>
               <div className="w-16 h-16 bg-indigo-600 rounded-[1.5rem] flex items-center justify-center text-white mb-6 mx-auto"><CalculatorIcon size={32}/></div>
-              <h2 className="font-black text-xl uppercase mb-6 tracking-tight leading-none">Resumen de Pedido</h2>
+              <h2 className="font-black text-xl uppercase mb-6 tracking-tight leading-none">Ticket de Pedido</h2>
               
               <div className="space-y-3 border-y py-6 mb-8 text-left text-[11px] uppercase font-bold">
-                 <div className="flex justify-between border-b pb-2 border-slate-50"><span>Ticket:</span><span className="text-slate-900 font-black">#{showSummary.order_number}</span></div>
+                 <div className="flex justify-between border-b pb-2 border-slate-50"><span>Orden:</span><span className="text-slate-900 font-black">#{showSummary.order_number}</span></div>
                  <div className="flex justify-between"><span>Cliente:</span><span className="text-slate-900">{(appData.clients || []).find(c => c.id === showSummary.client_id)?.name || 'S/N'}</span></div>
-                 <div className="flex justify-between"><span>Categoría:</span><span className="text-slate-900">{(appData.categories || []).find(cat => cat.id === showSummary.category_id)?.name || 'S/N'}</span></div>
-                 <div className="flex justify-between"><span>Cantidad:</span><span className="text-slate-900">{showSummary.quantity} u.</span></div>
-                 <div className="flex justify-between text-indigo-600 font-black pt-2"><span>Total:</span><span>${showSummary.total_price.toLocaleString()}</span></div>
-                 <div className="flex justify-between text-emerald-600 font-black"><span>Seña:</span><span>${showSummary.deposit.toLocaleString()}</span></div>
+                 <div className="flex justify-between"><span>Producto:</span><span className="text-slate-900">{(appData.categories || []).find(cat => cat.id === showSummary.category_id)?.name || 'S/N'}</span></div>
+                 <div className="flex justify-between"><span>Cantidad:</span><span className="text-slate-900">{showSummary.quantity} unidades</span></div>
+                 <div className="flex justify-between text-indigo-600 font-black pt-2 border-t mt-2"><span>Precio Total:</span><span>${showSummary.total_price.toLocaleString()}</span></div>
+                 <div className="flex justify-between text-emerald-600 font-black"><span>Seña abonada:</span><span>${showSummary.deposit.toLocaleString()}</span></div>
                  <div className="flex justify-between text-rose-500 font-black"><span>Saldo Restante:</span><span>${showSummary.balance.toLocaleString()}</span></div>
               </div>
 
@@ -762,7 +782,7 @@ const App: React.FC = () => {
                 const catFound = (appData.categories || []).find(cat => cat && cat.id === showSummary.category_id);
                 const text = `*Ticket #${showSummary.order_number}*\n*Cliente:* ${cFound?.name || 'S/N'}\n*Categoría:* ${catFound?.name || 'S/N'}\n*Cantidad:* ${showSummary.quantity}\n*Total:* $${showSummary.total_price.toLocaleString()}\n*Seña:* $${showSummary.deposit.toLocaleString()}\n*Restante:* $${showSummary.balance.toLocaleString()}`;
                 window.open(`https://wa.me/${cFound?.phone?.replace(/\D/g,'')}?text=${encodeURIComponent(text)}`, '_blank');
-              }} className="w-full bg-emerald-500 text-white py-4 rounded-xl font-black flex items-center justify-center gap-3 shadow-xl hover:bg-emerald-600 transition-all"><MessageCircleIcon size={18}/> WhatsApp</button>
+              }} className="w-full bg-emerald-500 text-white py-4 rounded-xl font-black flex items-center justify-center gap-3 shadow-xl hover:bg-emerald-600 transition-all"><MessageCircleIcon size={18}/> Enviar WhatsApp</button>
            </div>
         </div>
       )}
