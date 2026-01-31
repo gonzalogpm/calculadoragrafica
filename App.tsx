@@ -735,7 +735,8 @@ const App: React.FC = () => {
               </div>
               <button onClick={() => {
                 const cFound = (appData.clients || []).find(cl => cl && cl.id === showSummary.client_id);
-                const text = `*Ticket #${showSummary.order_number}*\n*Total:* $${showSummary.total_price}\n*Saldo:* $${showSummary.balance}`;
+                const catFound = (appData.categories || []).find(cat => cat && cat.id === showSummary.category_id);
+                const text = `*Ticket #${showSummary.order_number}*\n*Cliente:* ${cFound?.name || 'S/N'}\n*Categoría:* ${catFound?.name || 'S/N'}\n*Cantidad:* ${showSummary.quantity}\n*Total:* $${showSummary.total_price.toLocaleString()}\n*Seña:* $${showSummary.deposit.toLocaleString()}\n*Restante:* $${showSummary.balance.toLocaleString()}`;
                 window.open(`https://wa.me/${cFound?.phone?.replace(/\D/g,'')}?text=${encodeURIComponent(text)}`, '_blank');
               }} className="w-full bg-emerald-500 text-white py-4 rounded-xl font-black flex items-center justify-center gap-3 shadow-xl hover:bg-emerald-600 transition-all"><MessageCircleIcon size={18}/> WhatsApp</button>
            </div>
