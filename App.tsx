@@ -20,7 +20,12 @@ import {
   PhoneIcon,
   MapPinIcon,
   PercentIcon,
-  AlertTriangleIcon
+  AlertTriangleIcon,
+  CloudIcon,
+  LogInIcon,
+  LogOutIcon,
+  Loader2Icon,
+  RulerIcon
 } from 'lucide-react';
 import { 
   DesignItem, 
@@ -34,6 +39,7 @@ import {
   Order
 } from './types';
 import { packDesigns } from './utils/layout';
+import { supabase } from './supabaseClient';
 
 const DESIGN_COLORS = [
   { bg: 'bg-indigo-500', text: 'text-white', border: 'border-indigo-600' },
@@ -83,13 +89,12 @@ type Tab = 'dash' | 'presupuestar' | 'pedidos' | 'clientes' | 'config';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('dash');
-  const [appData, setAppData] = useState<AppDataType>(() => {
-    try {
-      const saved = localStorage.getItem(MASTER_KEY);
-      if (saved) return { ...DEFAULT_DATA, ...JSON.parse(saved) };
-    } catch (e) { console.warn(e); }
-    return DEFAULT_DATA;
-  });
+  const [appData, setAppData] = useState<AppDataType>(DEFAULT_DATA);
+  const [session, setSession] = useState<any>(null);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [loading, setLoading] = useState(true);
 
   const [lastSaved, setLastSaved] = useState<string>('');
   const [showSummary, setShowSummary] = useState<Order | null>(null);
@@ -97,19 +102,107 @@ const App: React.FC = () => {
   const ticketRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    const init = async () => {
+      if (!supabase) {
+        const saved = localStorage.getItem(MASTER_KEY);
+        if (saved) setAppData({ ...DEFAULT_DATA, ...JSON.parse(saved) });
+        setLoading(false);
+        return;
+      }
+
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      setSession(currentSession);
+
+      if (currentSession?.user) {
+        await fetchCloudData(currentSession.user.id);
+      } else {
+        const saved = localStorage.getItem(MASTER_KEY);
+        if (saved) setAppData({ ...DEFAULT_DATA, ...JSON.parse(saved) });
+      }
+      setLoading(false);
+    };
+
+    init();
+
+    if (supabase) {
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        setSession(session);
+        if (session?.user) fetchCloudData(session.user.id);
+      });
+      return () => subscription.unsubscribe();
+    }
+  }, []);
+
+  const fetchCloudData = async (userId: string) => {
+    if (!supabase) return;
+    try {
+      const [{ data: settings }, { data: cls }, { data: ords }] = await Promise.all([
+        supabase.from('settings').select('*').eq('user_id', userId).maybeSingle(),
+        supabase.from('clients').select('*').eq('user_id', userId),
+        supabase.from('orders').select('*').eq('user_id', userId)
+      ]);
+
+      setAppData(prev => ({
+        ...prev,
+        sheetWidth: Number(settings?.sheet_width) || prev.sheetWidth,
+        profitMargin: Number(settings?.profit_margin) || prev.profitMargin,
+        designSpacing: Number(settings?.design_spacing) || prev.designSpacing,
+        clients: cls || [],
+        orders: ords || []
+      }));
+    } catch (e) {
+      console.error("Error cargando desde la nube:", e);
+    }
+  };
+
+  useEffect(() => {
+    if (loading) return;
     localStorage.setItem(MASTER_KEY, JSON.stringify(appData));
     setLastSaved(new Date().toLocaleTimeString());
-  }, [appData]);
+    
+    const sync = async () => {
+      if (!supabase || !session?.user) return;
+      await supabase.from('settings').upsert({
+        user_id: session.user.id,
+        sheet_width: appData.sheetWidth,
+        profit_margin: appData.profitMargin,
+        design_spacing: appData.designSpacing,
+        updated_at: new Date().toISOString()
+      });
+    };
+    
+    sync();
+  }, [appData, session, loading]);
 
-  const updateData = (field: keyof AppDataType, value: any) => {
+  const updateData = async (field: keyof AppDataType, value: any) => {
     setAppData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!supabase) return;
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: authEmail,
+        password: authPassword,
+      });
+      if (error) {
+        const { error: signUpError } = await supabase.auth.signUp({
+          email: authEmail,
+          password: authPassword,
+        });
+        if (signUpError) alert("Error en autenticación. Verifica tus datos.");
+      }
+      setIsAuthModalOpen(false);
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   const askConfirmation = (title: string, message: string, onConfirm: () => void) => {
     setConfirmModal({ title, message, onConfirm });
   };
 
-  // --- CALCULADORA (SECCIÓN BLINDADA) ---
   const [newDesign, setNewDesign] = useState<Omit<DesignItem, 'id'>>({ name: '', width: 0, height: 0, quantity: 1 });
   const PREVIEW_SCALE = 6;
 
@@ -163,7 +256,6 @@ const App: React.FC = () => {
     return index !== -1 ? DESIGN_COLORS[index % DESIGN_COLORS.length] : DESIGN_COLORS[0];
   };
 
-  // --- PEDIDOS ---
   const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
   const [orderSearch, setOrderSearch] = useState('');
@@ -185,15 +277,23 @@ const App: React.FC = () => {
     setIsOrderModalOpen(true);
   };
 
-  const saveOrder = () => {
+  const saveOrder = async () => {
     const category = appData.categories.find(c => c.id === orderForm.categoryId);
     const totalPrice = (category?.pricePerUnit || 0) * (orderForm.quantity || 0);
     const deposit = orderForm.deposit || 0;
     const balance = totalPrice - deposit;
+    
+    let updatedOrder: Order;
     if (editingOrder) {
-      updateData('orders', appData.orders.map(o => o.id === editingOrder.id ? { ...o, ...orderForm, totalPrice, balance } as Order : o));
+      updatedOrder = { ...editingOrder, ...orderForm, totalPrice, balance } as Order;
+      updateData('orders', appData.orders.map(o => o.id === editingOrder.id ? updatedOrder : o));
     } else {
-      updateData('orders', [...appData.orders, { ...orderForm, id: Date.now().toString(), totalPrice, balance, createdAt: Date.now() } as Order]);
+      updatedOrder = { ...orderForm, id: Date.now().toString(), totalPrice, balance, createdAt: Date.now() } as Order;
+      updateData('orders', [...appData.orders, updatedOrder]);
+    }
+
+    if (supabase && session?.user) {
+      await supabase.from('orders').upsert({ ...updatedOrder, user_id: session.user.id });
     }
     setIsOrderModalOpen(false);
   };
@@ -204,10 +304,9 @@ const App: React.FC = () => {
       const matchesText = client?.name.toLowerCase().includes(orderSearch.toLowerCase()) || o.orderNumber.includes(orderSearch);
       const matchesStatus = orderStatusFilter === 'all' || o.statusId === orderStatusFilter;
       return matchesText && matchesStatus;
-    }).sort((a, b) => b.createdAt - a.createdAt);
+    }).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   }, [appData.orders, appData.clients, orderSearch, orderStatusFilter]);
 
-  // --- CLIENTES ---
   const [isClientModalOpen, setIsClientModalOpen] = useState(false);
   const [clientForm, setClientForm] = useState<Partial<Client>>({ name: '', phone: '', address: '' });
   const [clientSearch, setClientSearch] = useState('');
@@ -219,12 +318,18 @@ const App: React.FC = () => {
     );
   }, [appData.clients, clientSearch]);
 
-  const saveClient = () => {
+  const saveClient = async () => {
     if (!clientForm.name) return;
+    let updatedClient: Client;
     if (clientForm.id) {
-        updateData('clients', appData.clients.map(c => c.id === clientForm.id ? { ...c, ...clientForm } as Client : c));
+        updatedClient = { ...clientForm } as Client;
+        updateData('clients', appData.clients.map(c => c.id === clientForm.id ? updatedClient : c));
     } else {
-        updateData('clients', [...appData.clients, { ...clientForm, id: Date.now().toString(), createdAt: Date.now() } as Client]);
+        updatedClient = { ...clientForm, id: Date.now().toString(), createdAt: Date.now() } as Client;
+        updateData('clients', [...appData.clients, updatedClient]);
+    }
+    if (supabase && session?.user) {
+      await supabase.from('clients').upsert({ ...updatedClient, user_id: session.user.id });
     }
     setClientForm({ name: '', phone: '', address: '' });
     setIsClientModalOpen(false);
@@ -233,11 +338,12 @@ const App: React.FC = () => {
   const shareToWA = (order: Order) => {
     const client = appData.clients.find(c => c.id === order.clientId);
     const phone = client?.phone.replace(/\D/g,'') || '';
-    // El nombre del cliente se extrae directamente tal cual está guardado en el sistema (client.name)
     const clientName = client?.name || 'Cliente';
     const text = `*CreaStickers - Ticket #${order.orderNumber}*\n\n*Cliente:* ${clientName}\n*Medida:* ${order.width}x${order.height} cm\n*Cantidad:* ${order.quantity}\n*Total:* $${order.totalPrice}\n*Seña:* $${order.deposit}\n*Restante:* $${order.balance}`;
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank');
   };
+
+  if (loading) return <div className="min-h-screen bg-slate-50 flex items-center justify-center"><Loader2Icon className="animate-spin text-indigo-600" size={48}/></div>;
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-700 pb-12">
@@ -256,8 +362,16 @@ const App: React.FC = () => {
             <button onClick={() => setActiveTab('config')} className={`px-5 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'config' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Ajustes</button>
           </nav>
 
-          <div className="hidden lg:flex items-center gap-2 text-[11px] font-black text-emerald-500 uppercase bg-emerald-50 px-3 py-1.5 rounded-full">
-             <CheckCircle2Icon size={14}/> Sincronizado: {lastSaved}
+          <div className="flex items-center gap-4">
+             {session ? (
+               <button onClick={() => supabase?.auth.signOut()} className="flex items-center gap-2 text-[10px] font-black text-emerald-500 uppercase bg-emerald-50 px-4 py-2 rounded-full hover:bg-emerald-100 transition-all">
+                 <CloudIcon size={14}/> {session.user.email.split('@')[0]} <LogOutIcon size={12}/>
+               </button>
+             ) : (
+               <button onClick={() => setIsAuthModalOpen(true)} className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase bg-slate-100 px-4 py-2 rounded-full hover:bg-indigo-600 hover:text-white transition-all shadow-sm">
+                 <LogInIcon size={14}/> Sincronizar Nube
+               </button>
+             )}
           </div>
         </div>
       </header>
@@ -278,7 +392,7 @@ const App: React.FC = () => {
            </div>
         )}
 
-        {/* PRESUPUESTAR (BLINDADA) */}
+        {/* PRESUPUESTAR */}
         {activeTab === 'presupuestar' && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 animate-in fade-in duration-500">
             <div className="lg:col-span-4 space-y-8">
@@ -310,7 +424,13 @@ const App: React.FC = () => {
                <section className="bg-white rounded-[3.5rem] p-12 border border-slate-200 shadow-sm">
                   <div className="flex items-center justify-between mb-10">
                     <h2 className="font-black text-2xl text-slate-900 tracking-tighter flex items-center gap-4"><LayoutIcon className="text-indigo-500" size={24}/> Distribución</h2>
-                    <div className="bg-slate-900 text-white px-6 py-2.5 rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-lg shadow-indigo-900/20">{packingResult.totalLength.toFixed(1)} cm largo</div>
+                    <div className="flex flex-col items-end">
+                       <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Largo Total Optimizado</div>
+                       <div className="bg-slate-900 text-white px-8 py-3 rounded-2xl font-black text-lg uppercase tracking-widest shadow-lg shadow-indigo-900/20 flex items-center gap-3">
+                         <RulerIcon size={20} className="text-indigo-400"/>
+                         {packingResult.totalLength.toFixed(1)} cm
+                       </div>
+                    </div>
                   </div>
                   <div className="bg-slate-950 rounded-[3rem] min-h-[450px] overflow-auto flex justify-center p-14 custom-scrollbar border-[12px] border-slate-900 shadow-2xl">
                      {packingResult.totalLength > 0 ? (
@@ -376,7 +496,7 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* PEDIDOS */}
+        {/* PEDIDOS, CLIENTES Y AJUSTES MANTIENEN SU LÓGICA EXISTENTE */}
         {activeTab === 'pedidos' && (
            <div className="space-y-10 animate-in fade-in duration-500">
               <div className="flex flex-col lg:flex-row items-center justify-between gap-8 bg-white p-8 rounded-[3rem] shadow-sm border border-slate-200">
@@ -427,7 +547,6 @@ const App: React.FC = () => {
            </div>
         )}
 
-        {/* CLIENTES */}
         {activeTab === 'clientes' && (
            <div className="space-y-10 animate-in fade-in duration-500">
               <div className="flex flex-col md:flex-row items-center justify-between gap-8 bg-white p-8 rounded-[3rem] shadow-sm border border-slate-200">
@@ -456,7 +575,7 @@ const App: React.FC = () => {
                                   <div className="w-12 h-12 bg-slate-900 text-white rounded-2xl flex items-center justify-center font-black text-xl uppercase shadow-lg">{c.name.charAt(0)}</div>
                                   <div>
                                      <div className="font-black text-slate-900 uppercase text-sm leading-none mb-1">{c.name}</div>
-                                     <div className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">Registrado: {new Date(c.createdAt).toLocaleDateString()}</div>
+                                     <div className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">Registrado: {new Date(c.createdAt || 0).toLocaleDateString()}</div>
                                   </div>
                                </div>
                             </td>
@@ -482,7 +601,6 @@ const App: React.FC = () => {
            </div>
         )}
 
-        {/* AJUSTES / CONFIGURACIÓN */}
         {activeTab === 'config' && (
            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 animate-in fade-in duration-500 pb-16">
               <section className="bg-white rounded-[3rem] p-8 border border-slate-200 shadow-sm">
@@ -541,10 +659,31 @@ const App: React.FC = () => {
         )}
       </main>
 
-      {/* MODAL: CARGAR PEDIDO (REDISEÑADO Y COMPACTO) */}
+      {/* MODALES: LOGIN, CARGAR PEDIDO, RESUMEN TICKET, CLIENTE, CONFIRMACIÓN */}
+      {isAuthModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex items-center justify-center p-6 animate-in fade-in duration-300">
+           <div className="bg-white w-full max-w-sm rounded-[3rem] p-10 shadow-2xl relative">
+              <button onClick={() => setIsAuthModalOpen(false)} className="absolute top-8 right-8 text-slate-300 hover:text-slate-900"><XIcon size={24}/></button>
+              <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter mb-8 flex items-center gap-3"><CloudIcon className="text-indigo-600"/> Cuenta Taller</h2>
+              <form onSubmit={handleAuth} className="space-y-5">
+                 <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Email del Taller</label>
+                    <input type="email" required value={authEmail} onChange={e => setAuthEmail(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-bold outline-none" placeholder="taller@ejemplo.com" />
+                 </div>
+                 <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Contraseña</label>
+                    <input type="password" required value={authPassword} onChange={e => setAuthPassword(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-bold outline-none" placeholder="••••••••" />
+                 </div>
+                 <p className="text-[10px] text-slate-400 font-medium italic">Si el usuario no existe, se creará automáticamente.</p>
+                 <button type="submit" className="w-full bg-indigo-600 text-white font-black py-5 rounded-2xl uppercase text-[11px] tracking-widest shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all">Sincronizar Ahora</button>
+              </form>
+           </div>
+        </div>
+      )}
+
       {isOrderModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4 animate-in fade-in duration-300">
-           <div className="bg-white w-full max-w-md rounded-[2rem] p-5 shadow-2xl relative overflow-hidden border border-slate-200">
+           <div className="bg-white w-full max-md rounded-[2rem] p-5 shadow-2xl relative overflow-hidden border border-slate-200">
               <h2 className="text-lg font-black text-slate-900 uppercase tracking-tighter mb-4 flex items-center gap-3 leading-none">
                  <div className="w-9 h-9 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg"><PackageIcon size={18}/></div>
                  {editingOrder ? 'Editar Pedido' : 'Cargar Pedido'}
@@ -607,7 +746,6 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL: RESUMEN TICKET */}
       {showSummary && (
         <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-xl z-[200] flex items-center justify-center p-6 animate-in zoom-in duration-300">
            <div className="bg-white w-full max-w-sm rounded-[3rem] p-10 shadow-2xl relative flex flex-col items-center text-center overflow-hidden" ref={ticketRef}>
@@ -633,7 +771,6 @@ const App: React.FC = () => {
         </div>
       )}
       
-      {/* MODAL: CLIENTE (VALIDACIÓN WHATSAPP CORREGIDA) */}
       {isClientModalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-6 animate-in fade-in duration-300">
            <div className="bg-white w-full max-w-md rounded-[3.5rem] p-12 shadow-2xl relative overflow-hidden">
@@ -642,18 +779,7 @@ const App: React.FC = () => {
                  <div className="space-y-2"><label className="text-[11px] font-black text-slate-400 uppercase ml-2 tracking-widest">Nombre</label><input type="text" value={clientForm.name} onChange={e => setClientForm({...clientForm, name: e.target.value})} className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 font-black outline-none" /></div>
                  <div className="space-y-2">
                     <label className="text-[11px] font-black text-slate-400 uppercase ml-2 tracking-widest">WhatsApp</label>
-                    <input 
-                      type="text" 
-                      value={clientForm.phone} 
-                      placeholder="+54221..."
-                      onChange={e => {
-                        const val = e.target.value;
-                        // Permitir solo números y el símbolo '+'
-                        const filtered = val.replace(/[^0-9+]/g, '');
-                        setClientForm({...clientForm, phone: filtered});
-                      }} 
-                      className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 font-black outline-none" 
-                    />
+                    <input type="text" value={clientForm.phone} placeholder="+54221..." onChange={e => setClientForm({...clientForm, phone: e.target.value.replace(/[^0-9+]/g, '')})} className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 font-black outline-none" />
                  </div>
                  <div className="space-y-2"><label className="text-[11px] font-black text-slate-400 uppercase ml-2 tracking-widest">Dirección</label><input type="text" value={clientForm.address} onChange={e => setClientForm({...clientForm, address: e.target.value})} className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 font-black outline-none" /></div>
                  <div className="pt-6 flex gap-4">
@@ -665,7 +791,6 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL: CONFIRMACIÓN PERSONALIZADA (REMPLAZA CONFIRM BROWSER) */}
       {confirmModal && (
         <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-[300] flex items-center justify-center p-6 animate-in fade-in duration-200">
            <div className="bg-white w-full max-sm rounded-[2.5rem] p-8 shadow-2xl text-center border border-rose-100">
