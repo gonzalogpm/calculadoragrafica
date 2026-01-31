@@ -3,17 +3,32 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
     <title>CreaStickers</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <style>
         html { font-size: 104%; }
-        body { font-family: 'Inter', sans-serif; }
+        body { 
+            font-family: 'Inter', sans-serif; 
+            overflow-x: hidden;
+            width: 100%;
+        }
         .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #6366f1; border-radius: 10px; }
         
+        /* Ocultar scrollbar en móviles para navegación limpia */
+        @media (max-width: 640px) {
+            .no-scrollbar-mobile::-webkit-scrollbar {
+                display: none;
+            }
+            .no-scrollbar-mobile {
+                -ms-overflow-style: none;
+                scrollbar-width: none;
+            }
+        }
+
         /* Remarcado por defecto para inputs */
         input:not([type="checkbox"]), select, textarea {
             border: 2px solid #cbd5e1 !important; /* slate-300 */
@@ -36,11 +51,9 @@
   }
 }
 </script>
-<link rel="stylesheet" href="/index.css">
 </head>
-<body class="bg-slate-50 text-slate-900 overflow-x-hidden">
-    <div id="root"></div>
+<body class="bg-slate-50 text-slate-900 overflow-x-hidden w-full">
+    <div id="root" class="w-full overflow-x-hidden"></div>
     <script type="module" src="./index.tsx"></script>
-<script type="module" src="/index.tsx"></script>
 </body>
 </html>
