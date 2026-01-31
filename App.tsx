@@ -528,7 +528,11 @@ const App: React.FC = () => {
                            <div><div className="font-black text-slate-900 uppercase text-sm">{c?.name || 'DESCONOCIDO'}</div><div className="text-[10px] font-bold text-slate-400 uppercase flex gap-2"><span className={`px-2 py-0.5 rounded-full text-white ${s?.color}`}>{s?.name}</span><span className="bg-slate-100 px-2 py-0.5 rounded-full">{cat?.name}</span>{o.width}x{o.height}cm</div></div>
                         </div>
                         <div className="flex items-center gap-8 w-full md:w-auto justify-end">
-                           <div className="text-right min-w-[200px] border-r pr-6 border-slate-100"><div className="text-[9px] font-black text-slate-400 uppercase mb-1">Costo Final</div><div className="font-black text-slate-900 text-lg">$ {o.total_price.toLocaleString()}</div></div>
+                           <div className="text-right min-w-[300px] border-r pr-6 border-slate-100 flex gap-6 items-center">
+                              <div className="text-right"><div className="text-[9px] font-black text-emerald-500 uppercase">Seña</div><div className="font-black text-emerald-600 text-sm">$ {o.deposit.toLocaleString()}</div></div>
+                              <div className="text-right"><div className="text-[9px] font-black text-rose-400 uppercase">Saldo</div><div className="font-black text-rose-500 text-sm">$ {o.balance.toLocaleString()}</div></div>
+                              <div className="text-right border-l pl-6 border-slate-100"><div className="text-[9px] font-black text-slate-400 uppercase">Total</div><div className="font-black text-slate-900 text-lg">$ {o.total_price.toLocaleString()}</div></div>
+                           </div>
                            <div className="flex gap-2">
                               <button onClick={() => setShowSummary(o)} className="p-3 bg-slate-50 text-slate-400 rounded-xl hover:bg-indigo-50"><Share2Icon size={18}/></button>
                               <button onClick={() => { setEditingOrder(o); setOrderForm(o); setIsOrderModalOpen(true); }} className="p-3 bg-slate-50 text-slate-400 rounded-xl hover:bg-indigo-50"><Edit3Icon size={18}/></button>
@@ -551,13 +555,14 @@ const App: React.FC = () => {
               <div className="bg-white rounded-[2rem] border overflow-hidden shadow-sm overflow-x-auto custom-scrollbar">
                  <table className="w-full text-left">
                     <thead className="bg-slate-50 border-b text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                       <tr><th className="px-8 py-6">Cliente</th><th className="px-8 py-6">WhatsApp</th><th className="px-8 py-6 text-right">Acciones</th></tr>
+                       <tr><th className="px-8 py-6">Cliente</th><th className="px-8 py-6">WhatsApp</th><th className="px-8 py-6">Dirección</th><th className="px-8 py-6 text-right">Acciones</th></tr>
                     </thead>
                     <tbody className="divide-y">
                        {filteredClients.map(c => (
                          <tr key={c.id} className="hover:bg-slate-50 group">
                             <td className="px-8 py-6 flex items-center gap-4"><div className="w-10 h-10 bg-slate-900 text-white rounded-xl flex items-center justify-center font-black text-sm">{c.name?.charAt(0)}</div><div className="font-black text-slate-900 uppercase text-xs">{c.name}</div></td>
                             <td className="px-8 py-6 font-black text-slate-600 text-xs">{c.phone}</td>
+                            <td className="px-8 py-6 font-black text-slate-400 text-[10px] uppercase">{c.address || '-'}</td>
                             <td className="px-8 py-6 text-right opacity-0 group-hover:opacity-100 transition-all">
                                <button onClick={() => { setClientForm(c); setIsClientModalOpen(true); }} className="p-3 text-indigo-600"><Edit3Icon size={18}/></button>
                                <button onClick={() => askConfirmation("Borrar", `¿Eliminar a ${c.name}?`, () => updateData('clients', appData.clients.filter(cl => cl.id !== c.id)))} className="p-3 text-rose-500"><TrashIcon size={18}/></button>
@@ -639,7 +644,7 @@ const App: React.FC = () => {
       {/* Modales Genéricos */}
       {isAuthModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-6">
-           <div className="bg-white w-full max-w-sm rounded-[2rem] p-10 shadow-2xl relative">
+           <div className="bg-white w-full max-sm rounded-[2rem] p-10 shadow-2xl relative">
               <button onClick={() => setIsAuthModalOpen(false)} className="absolute top-6 right-6 text-slate-300 hover:text-slate-900"><XIcon size={20}/></button>
               <h2 className="text-xl font-black text-slate-900 uppercase mb-6 flex items-center gap-3"><CloudIcon className="text-indigo-600"/> Cuenta Taller</h2>
               <form onSubmit={handleAuth} className="space-y-5">
@@ -659,7 +664,20 @@ const App: React.FC = () => {
               <h2 className="text-xl font-black text-slate-900 uppercase mb-8 flex items-center gap-3"><UsersIcon/> Cliente</h2>
               <div className="space-y-6">
                  <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase ml-2">Nombre</label><input type="text" value={clientForm.name || ''} onChange={e => setClientForm({...clientForm, name: e.target.value})} className="w-full bg-slate-50 p-4 rounded-xl font-black border-none" /></div>
-                 <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase ml-2">WhatsApp</label><input type="text" value={clientForm.phone || ''} onChange={e => setClientForm({...clientForm, phone: e.target.value})} className="w-full bg-slate-50 p-4 rounded-xl font-black border-none" /></div>
+                 <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-400 uppercase ml-2">WhatsApp</label>
+                    <input 
+                      type="text" 
+                      value={clientForm.phone || ''} 
+                      onChange={e => {
+                        const val = e.target.value.replace(/[^\d+]/g, '');
+                        setClientForm({...clientForm, phone: val});
+                      }} 
+                      placeholder="+549..."
+                      className="w-full bg-slate-50 p-4 rounded-xl font-black border-none" 
+                    />
+                 </div>
+                 <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase ml-2">Dirección</label><input type="text" value={clientForm.address || ''} onChange={e => setClientForm({...clientForm, address: e.target.value})} className="w-full bg-slate-50 p-4 rounded-xl font-black border-none" placeholder="Calle 123..." /></div>
                  <div className="pt-4 flex gap-4"><button onClick={() => setIsClientModalOpen(false)} className="flex-1 font-black text-slate-400 uppercase text-xs">Cerrar</button><button onClick={async () => {
                     const client = clientForm.id ? { ...clientForm } as Client : { ...clientForm, id: generateUUID(), created_at: new Date().toISOString() } as Client;
                     updateData('clients', clientForm.id ? appData.clients.map(c => c.id === client.id ? client : c) : [...appData.clients, client]);
