@@ -27,7 +27,8 @@ import {
   Loader2Icon,
   RulerIcon,
   CloudOffIcon,
-  AlertCircleIcon
+  AlertCircleIcon,
+  SettingsIcon
 } from 'lucide-react';
 import { 
   DesignItem, 
@@ -106,21 +107,30 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const init = async () => {
+      // Cargar datos locales siempre primero por velocidad
+      const saved = localStorage.getItem(MASTER_KEY);
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          setAppData(prev => ({ ...prev, ...parsed }));
+        } catch (e) {
+          console.error("Error cargando caché local");
+        }
+      }
+
       if (!supabase) {
-        const saved = localStorage.getItem(MASTER_KEY);
-        if (saved) setAppData({ ...DEFAULT_DATA, ...JSON.parse(saved) });
         setLoading(false);
         return;
       }
 
-      const { data: { session: currentSession } } = await supabase.auth.getSession();
-      setSession(currentSession);
-
-      if (currentSession?.user) {
-        await fetchCloudData(currentSession.user.id);
-      } else {
-        const saved = localStorage.getItem(MASTER_KEY);
-        if (saved) setAppData({ ...DEFAULT_DATA, ...JSON.parse(saved) });
+      try {
+        const { data: { session: currentSession } } = await supabase.auth.getSession();
+        setSession(currentSession);
+        if (currentSession?.user) {
+          await fetchCloudData(currentSession.user.id);
+        }
+      } catch (e) {
+        console.error("Fallo al conectar con Supabase Auth");
       }
       setLoading(false);
     };
@@ -145,18 +155,16 @@ const App: React.FC = () => {
         supabase.from('orders').select('*').eq('user_id', userId)
       ]);
 
-      if (settings || cls || ords) {
-        setAppData(prev => ({
-          ...prev,
-          sheetWidth: Number(settings?.sheet_width) || prev.sheetWidth,
-          profitMargin: Number(settings?.profit_margin) || prev.profitMargin,
-          designSpacing: Number(settings?.design_spacing) || prev.designSpacing,
-          clients: cls || [],
-          orders: ords || []
-        }));
-      }
+      setAppData(prev => ({
+        ...prev,
+        sheetWidth: Number(settings?.sheet_width) || prev.sheetWidth,
+        profitMargin: Number(settings?.profit_margin) || prev.profitMargin,
+        designSpacing: Number(settings?.design_spacing) || prev.designSpacing,
+        clients: cls || prev.clients,
+        orders: ords || prev.orders
+      }));
     } catch (e) {
-      console.error("Error cargando desde la nube:", e);
+      console.error("Error sincronizando nube");
     }
   };
 
@@ -167,13 +175,17 @@ const App: React.FC = () => {
     
     const sync = async () => {
       if (!supabase || !session?.user) return;
-      await supabase.from('settings').upsert({
-        user_id: session.user.id,
-        sheet_width: appData.sheetWidth,
-        profit_margin: appData.profitMargin,
-        design_spacing: appData.designSpacing,
-        updated_at: new Date().toISOString()
-      });
+      try {
+        await supabase.from('settings').upsert({
+          user_id: session.user.id,
+          sheet_width: appData.sheetWidth,
+          profit_margin: appData.profitMargin,
+          design_spacing: appData.designSpacing,
+          updated_at: new Date().toISOString()
+        });
+      } catch (e) {
+        console.warn("Error en sincronización automática");
+      }
     };
     
     sync();
@@ -186,43 +198,38 @@ const App: React.FC = () => {
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!supabase) {
-      alert("⚠️ El sistema no está conectado a la base de datos.");
+      alert("⚠️ El sistema no tiene las llaves de Supabase configuradas en el servidor. El botón de Sincronizar solo funciona si configuras las variables VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY.");
       return;
     }
     setAuthLoading(true);
 
     try {
-      // Intentamos login
       const { data, error: signInError } = await supabase.auth.signInWithPassword({
         email: authEmail,
         password: authPassword,
       });
 
       if (signInError) {
-        // Si falla porque no existe o credenciales inválidas, intentamos registrar
         const { error: signUpError } = await supabase.auth.signUp({
           email: authEmail,
           password: authPassword,
         });
 
         if (signUpError) {
-          // Si el registro falla es porque existe pero la pass es distinta
           if (signUpError.message.includes("already registered") || signUpError.message.includes("already exists")) {
-            alert("❌ La cuenta ya existe pero la contraseña es incorrecta. Por favor, verifica tus datos.");
+            alert("❌ La contraseña es incorrecta para este correo.");
           } else {
             alert(`❌ Error: ${signUpError.message}`);
           }
         } else {
-          alert("✅ ¡Cuenta creada! Ya puedes sincronizar tus datos.");
+          alert("✅ Cuenta creada con éxito.");
           setIsAuthModalOpen(false);
         }
       } else {
-        // Login exitoso
         setIsAuthModalOpen(false);
       }
     } catch (err) {
-      console.error(err);
-      alert("Error de conexión. Inténtalo de nuevo.");
+      alert("Problema de conexión.");
     } finally {
       setAuthLoading(false);
     }
@@ -377,48 +384,57 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-700 pb-12">
       <header className="bg-white/95 backdrop-blur-md border-b border-slate-200 px-6 py-4 sticky top-0 z-[60] shadow-sm">
-        <div className="max-w-7xl mx-auto flex flex-col lg:flex-row items-center justify-between gap-4">
+        <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 items-center gap-6">
           
-          {/* Logo */}
-          <div className="flex items-center gap-3">
+          {/* Col 1: Logo */}
+          <div className="flex items-center gap-3 justify-start">
             <div className="bg-indigo-600 p-2.5 rounded-xl text-white shadow-lg shadow-indigo-200"><CalculatorIcon size={24}/></div>
             <h1 className="text-2xl font-black text-slate-900 tracking-tighter">Crea<span className="text-indigo-600">Stickers</span></h1>
           </div>
           
-          {/* Navegación central */}
-          <nav className="flex items-center bg-slate-100 p-1.5 rounded-2xl border border-slate-200 shadow-inner overflow-x-auto max-w-full">
+          {/* Col 2: Navegación */}
+          <nav className="flex items-center justify-center bg-slate-100 p-1 rounded-2xl border border-slate-200 shadow-inner overflow-x-auto">
             <button onClick={() => setActiveTab('dash')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === 'dash' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Inicio</button>
-            <button onClick={() => setActiveTab('presupuestar')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === 'presupuestar' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Presupuestar</button>
+            <button onClick={() => setActiveTab('presupuestar')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === 'presupuestar' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Presu</button>
             <button onClick={() => setActiveTab('pedidos')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === 'pedidos' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Pedidos</button>
             <button onClick={() => setActiveTab('clientes')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === 'clientes' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Clientes</button>
             <button onClick={() => setActiveTab('config')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === 'config' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Ajustes</button>
           </nav>
 
-          {/* Sección de Auth Mejorada */}
-          <div className="flex items-center gap-3 min-w-[180px] justify-end">
+          {/* Col 3: Autenticación - SIEMPRE VISIBLE */}
+          <div className="flex items-center gap-3 justify-end">
              {session?.user ? (
                <button 
-                 onClick={() => {
-                   askConfirmation("Cerrar Sesión", "¿Seguro que quieres desconectar el taller de la nube?", () => supabase?.auth.signOut());
-                 }} 
-                 className="flex items-center gap-2 text-[10px] font-black text-emerald-600 uppercase bg-emerald-50 border border-emerald-200 px-4 py-2.5 rounded-full hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 transition-all shadow-sm group"
+                 onClick={() => askConfirmation("Cerrar Sesión", "¿Quieres desconectar el taller de la nube?", () => supabase?.auth.signOut())} 
+                 className="flex items-center gap-2 text-[10px] font-black text-emerald-600 uppercase bg-emerald-50 border border-emerald-200 px-5 py-3 rounded-full hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 transition-all shadow-sm"
                >
-                 <div className="w-2 h-2 rounded-full bg-emerald-500 group-hover:bg-rose-500 animate-pulse"></div>
+                 <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
                  {session.user.email?.split('@')[0] || 'Conectado'}
-                 <LogOutIcon size={12} className="ml-1 opacity-50"/>
+                 <LogOutIcon size={12}/>
                </button>
              ) : (
-               <button 
-                 onClick={() => setIsAuthModalOpen(true)} 
-                 className="flex items-center gap-3 text-[11px] font-black text-white uppercase bg-indigo-600 border-2 border-indigo-500 px-6 py-2.5 rounded-full hover:bg-indigo-700 hover:scale-105 transition-all shadow-lg shadow-indigo-100"
-               >
-                 <LogInIcon size={14}/> Sincronizar Nube
-               </button>
+               <div className="flex items-center gap-2">
+                 {!supabase ? (
+                   <button 
+                     onClick={() => alert("⚠️ ERROR DE DEPLOY: Las llaves VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY no están configuradas en tu servidor de hosting. Debes agregarlas en el panel de control de tu proyecto para activar la nube.")}
+                     className="flex items-center gap-2 text-[10px] font-black text-white uppercase bg-amber-500 px-6 py-3 rounded-full shadow-lg hover:bg-amber-600 transition-all border-b-4 border-amber-700 active:translate-y-1 active:border-b-0"
+                   >
+                     <SettingsIcon size={14} className="animate-spin-slow"/> Configurar Nube
+                   </button>
+                 ) : (
+                   <button 
+                     onClick={() => setIsAuthModalOpen(true)} 
+                     className="flex items-center gap-3 text-[11px] font-black text-white uppercase bg-indigo-600 border-2 border-indigo-400 px-8 py-3 rounded-full hover:bg-indigo-700 hover:scale-105 transition-all shadow-xl shadow-indigo-100"
+                   >
+                     <LogInIcon size={16}/> Sincronizar Nube
+                   </button>
+                 )}
+               </div>
              )}
              
              {!supabase && (
-               <div title="Base de datos no configurada" className="flex items-center gap-1 text-[9px] font-black text-amber-500 uppercase bg-amber-50 px-3 py-1.5 rounded-full border border-amber-200">
-                 <CloudOffIcon size={12}/> Local
+               <div className="hidden sm:flex items-center gap-1 text-[9px] font-black text-slate-400 uppercase bg-slate-100 px-3 py-1.5 rounded-full border border-slate-200">
+                 <CloudOffIcon size={12}/> Modo Local
                </div>
              )}
           </div>
@@ -426,7 +442,7 @@ const App: React.FC = () => {
       </header>
 
       <main className="max-w-7xl mx-auto p-6 md:p-10">
-        
+        {/* DASHBOARD */}
         {activeTab === 'dash' && (
            <div className="space-y-10 animate-in fade-in duration-500">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
@@ -441,6 +457,7 @@ const App: React.FC = () => {
            </div>
         )}
 
+        {/* PRESUPUESTAR */}
         {activeTab === 'presupuestar' && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 animate-in fade-in duration-500">
             <div className="lg:col-span-4 space-y-8">
@@ -522,7 +539,7 @@ const App: React.FC = () => {
                               <td className="text-right font-bold text-slate-400 text-sm whitespace-nowrap">${res.totalProductionCost.toFixed(0)}</td>
                               <td className="py-6 px-8 text-right rounded-r-[2rem] font-black text-emerald-600 text-xl whitespace-nowrap">
                                  ${res.totalClientPrice.toFixed(0)}
-                                 <button onClick={() => askConfirmation("Borrar Diseño", "¿Seguro que deseas quitar este diseño del presupuesto?", () => updateData('designs', appData.designs.filter(i => i.id !== d.id)))} className="ml-5 text-slate-300 hover:text-rose-500 transition-all opacity-0 group-hover:opacity-100"><TrashIcon size={18}/></button>
+                                 <button onClick={() => askConfirmation("Borrar Diseño", "¿Seguro que deseas quitar este diseño?", () => updateData('designs', appData.designs.filter(i => i.id !== d.id)))} className="ml-5 text-slate-300 hover:text-rose-500 transition-all opacity-0 group-hover:opacity-100"><TrashIcon size={18}/></button>
                               </td>
                             </tr>
                           )
@@ -544,7 +561,7 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* OTROS TABS (Pedidos, Clientes, Config) SE MANTIENEN IGUAL QUE ANTES */}
+        {/* PEDIDOS */}
         {activeTab === 'pedidos' && (
            <div className="space-y-10 animate-in fade-in duration-500">
               <div className="flex flex-col lg:flex-row items-center justify-between gap-8 bg-white p-8 rounded-[3rem] shadow-sm border border-slate-200">
@@ -595,6 +612,7 @@ const App: React.FC = () => {
            </div>
         )}
 
+        {/* CLIENTES */}
         {activeTab === 'clientes' && (
            <div className="space-y-10 animate-in fade-in duration-500">
               <div className="flex flex-col md:flex-row items-center justify-between gap-8 bg-white p-8 rounded-[3rem] shadow-sm border border-slate-200">
@@ -649,6 +667,7 @@ const App: React.FC = () => {
            </div>
         )}
 
+        {/* CONFIGURACIÓN */}
         {activeTab === 'config' && (
            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 animate-in fade-in duration-500 pb-16">
               <section className="bg-white rounded-[3rem] p-8 border border-slate-200 shadow-sm">
@@ -700,10 +719,9 @@ const App: React.FC = () => {
                          <button onClick={() => askConfirmation("Borrar Descuento", "¿Eliminar esta regla de descuento?", () => updateData('quantityDiscounts', appData.quantityDiscounts.filter(d => d.id !== disc.id)))} className="text-slate-200 hover:text-rose-500 transition-all opacity-0 group-hover:opacity-100"><TrashIcon size={16}/></button>
                       </div>
                     ))}
-                    {appData.quantityDiscounts.length === 0 && <p className="text-center text-[10px] font-black text-slate-300 uppercase tracking-widest py-10 italic">Sin descuentos</p>}
                  </div>
                  <div className="mt-8 pt-8 border-t border-slate-100">
-                    <button onClick={() => askConfirmation("Reset Total", "Esto borrará TODO (clientes, pedidos, ajustes) de este navegador. ¿Seguro?", () => { localStorage.clear(); window.location.reload(); })} className="w-full flex items-center justify-center gap-2 py-3 bg-rose-50 text-rose-500 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-rose-500 hover:text-white transition-all"><AlertCircleIcon size={14}/> Limpiar Datos Locales</button>
+                    <button onClick={() => askConfirmation("Borrar Todo", "Se eliminará el caché local. ¿Confirmas?", () => { localStorage.clear(); window.location.reload(); })} className="w-full flex items-center justify-center gap-2 py-3 bg-rose-50 text-rose-500 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-rose-500 hover:text-white transition-all"><AlertCircleIcon size={14}/> Limpiar Caché Local</button>
                  </div>
               </section>
            </div>
@@ -714,23 +732,18 @@ const App: React.FC = () => {
       {isAuthModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex items-center justify-center p-6 animate-in fade-in duration-300">
            <div className="bg-white w-full max-w-sm rounded-[3rem] p-10 shadow-2xl relative">
-              <button onClick={() => setIsAuthModalOpen(false)} className="absolute top-8 right-8 text-slate-300 hover:text-slate-900"><XIcon size={24}/></button>
+              <button onClick={() => setIsAuthModalOpen(false)} className="absolute top-8 right-8 text-slate-300 hover:text-slate-900 transition-all active:scale-125"><XIcon size={24}/></button>
               <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter mb-8 flex items-center gap-3"><CloudIcon className="text-indigo-600"/> Cuenta Taller</h2>
               <form onSubmit={handleAuth} className="space-y-5">
                  <div className="space-y-2">
                     <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Email del Taller</label>
-                    <input type="email" required value={authEmail} onChange={e => setAuthEmail(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-bold outline-none" placeholder="taller@ejemplo.com" />
+                    <input type="email" required value={authEmail} onChange={e => setAuthEmail(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl p-4 font-bold outline-none focus:border-indigo-500" placeholder="taller@ejemplo.com" />
                  </div>
                  <div className="space-y-2">
                     <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Contraseña</label>
-                    <input type="password" required value={authPassword} onChange={e => setAuthPassword(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-bold outline-none" placeholder="••••••••" />
+                    <input type="password" required value={authPassword} onChange={e => setAuthPassword(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl p-4 font-bold outline-none focus:border-indigo-500" placeholder="••••••••" />
                  </div>
-                 <div className="bg-amber-50 p-4 rounded-xl border border-amber-100">
-                    <p className="text-[10px] text-amber-700 font-bold leading-tight uppercase tracking-tight">
-                       Si el correo no existe, se creará. Si ya existe, debes usar la contraseña original.
-                    </p>
-                 </div>
-                 <button type="submit" disabled={authLoading} className="w-full bg-indigo-600 text-white font-black py-5 rounded-2xl uppercase text-[11px] tracking-widest shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center justify-center gap-3">
+                 <button type="submit" disabled={authLoading} className="w-full bg-indigo-600 text-white font-black py-5 rounded-2xl uppercase text-[11px] tracking-widest shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center justify-center gap-3 disabled:opacity-50">
                     {authLoading ? <Loader2Icon className="animate-spin" size={18}/> : 'Sincronizar Ahora'}
                  </button>
               </form>
@@ -738,72 +751,73 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* OTROS MODALES (Order, Summary, Client, Confirm) SE MANTIENEN IGUAL */}
+      {/* MODAL PEDIDO */}
       {isOrderModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4 animate-in fade-in duration-300">
-           <div className="bg-white w-full max-md rounded-[2rem] p-5 shadow-2xl relative overflow-hidden border border-slate-200">
-              <h2 className="text-lg font-black text-slate-900 uppercase tracking-tighter mb-4 flex items-center gap-3 leading-none">
-                 <div className="w-9 h-9 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg"><PackageIcon size={18}/></div>
-                 {editingOrder ? 'Editar Pedido' : 'Cargar Pedido'}
+           <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl relative border border-slate-200">
+              <h2 className="text-xl font-black text-slate-900 uppercase tracking-tighter mb-6 flex items-center gap-3 leading-none">
+                 <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg"><PackageIcon size={20}/></div>
+                 {editingOrder ? 'Editar Pedido' : 'Nuevo Pedido'}
               </h2>
-              <div className="space-y-3">
-                 <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-0.5">
-                      <label className="text-[9px] font-black text-slate-400 uppercase ml-2 tracking-widest">Nº Pedido</label>
-                      <input type="text" value={orderForm.orderNumber} onChange={e => setOrderForm({...orderForm, orderNumber: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 font-black outline-none text-[11px]" />
+              <div className="space-y-4">
+                 <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Nº Pedido</label>
+                      <input type="text" value={orderForm.orderNumber} onChange={e => setOrderForm({...orderForm, orderNumber: e.target.value})} className="w-full bg-slate-50 border-2 border-slate-200 rounded-xl p-3 font-black outline-none" />
                     </div>
-                    <div className="space-y-0.5">
-                      <label className="text-[9px] font-black text-slate-400 uppercase ml-2 tracking-widest">Estado</label>
-                      <select value={orderForm.statusId} onChange={e => setOrderForm({...orderForm, statusId: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 font-black outline-none appearance-none text-[11px]">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Estado</label>
+                      <select value={orderForm.statusId} onChange={e => setOrderForm({...orderForm, statusId: e.target.value})} className="w-full bg-slate-50 border-2 border-slate-200 rounded-xl p-3 font-black outline-none appearance-none">
                         {appData.statuses.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                       </select>
                     </div>
                  </div>
                  
-                 <div className="space-y-0.5">
-                    <label className="text-[9px] font-black text-slate-400 uppercase ml-2 tracking-widest">Cliente</label>
-                    <select value={orderForm.clientId} onChange={e => setOrderForm({...orderForm, clientId: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 font-black outline-none appearance-none text-[11px]">
+                 <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Cliente</label>
+                    <select value={orderForm.clientId} onChange={e => setOrderForm({...orderForm, clientId: e.target.value})} className="w-full bg-slate-50 border-2 border-slate-200 rounded-xl p-3 font-black outline-none appearance-none">
                       {appData.clients.length === 0 ? <option>Registra un cliente</option> : appData.clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
                  </div>
                  
-                 <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-0.5">
-                      <label className="text-[9px] font-black text-slate-400 uppercase ml-2 tracking-widest">Medidas (cm)</label>
+                 <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Medidas (cm)</label>
                       <div className="flex items-center gap-1">
-                        <input type="number" placeholder="W" value={orderForm.width || ''} onChange={e => setOrderForm({...orderForm, width: Number(e.target.value)})} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 font-black outline-none text-[11px] text-center" />
+                        <input type="number" placeholder="W" value={orderForm.width || ''} onChange={e => setOrderForm({...orderForm, width: Number(e.target.value)})} className="w-full bg-slate-50 border-2 border-slate-200 rounded-xl p-3 font-black text-center" />
                         <span className="text-slate-300 font-black">x</span>
-                        <input type="number" placeholder="H" value={orderForm.height || ''} onChange={e => setOrderForm({...orderForm, height: Number(e.target.value)})} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 font-black outline-none text-[11px] text-center" />
+                        <input type="number" placeholder="H" value={orderForm.height || ''} onChange={e => setOrderForm({...orderForm, height: Number(e.target.value)})} className="w-full bg-slate-50 border-2 border-slate-200 rounded-xl p-3 font-black text-center" />
                       </div>
                     </div>
-                    <div className="space-y-0.5">
-                      <label className="text-[9px] font-black text-slate-400 uppercase ml-2 tracking-widest">Cantidad</label>
-                      <input type="number" value={orderForm.quantity || ''} onChange={e => setOrderForm({...orderForm, quantity: Number(e.target.value)})} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 font-black outline-none text-[11px] text-center" />
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Cantidad</label>
+                      <input type="number" value={orderForm.quantity || ''} onChange={e => setOrderForm({...orderForm, quantity: Number(e.target.value)})} className="w-full bg-slate-50 border-2 border-slate-200 rounded-xl p-3 font-black text-center" />
                     </div>
                  </div>
 
-                 <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-0.5">
-                      <label className="text-[9px] font-black text-slate-400 uppercase ml-2 tracking-widest">Categoría</label>
-                      <select value={orderForm.categoryId} onChange={e => setOrderForm({...orderForm, categoryId: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 font-black outline-none appearance-none text-[11px]">
+                 <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Categoría</label>
+                      <select value={orderForm.categoryId} onChange={e => setOrderForm({...orderForm, categoryId: e.target.value})} className="w-full bg-slate-50 border-2 border-slate-200 rounded-xl p-3 font-black appearance-none">
                         {appData.categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                       </select>
                     </div>
-                    <div className="space-y-0.5">
-                      <label className="text-[9px] font-black text-slate-400 uppercase ml-2 tracking-widest">Seña ($)</label>
-                      <input type="number" value={orderForm.deposit || ''} onChange={e => setOrderForm({...orderForm, deposit: Number(e.target.value)})} className="w-full bg-emerald-50 border border-emerald-100 rounded-xl p-2 font-black text-emerald-700 outline-none text-[11px]" />
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Seña ($)</label>
+                      <input type="number" value={orderForm.deposit || ''} onChange={e => setOrderForm({...orderForm, deposit: Number(e.target.value)})} className="w-full bg-emerald-50 border-2 border-emerald-100 rounded-xl p-3 font-black text-emerald-700 outline-none" />
                     </div>
                  </div>
                  
-                 <div className="pt-3 flex gap-2">
-                    <button onClick={() => setIsOrderModalOpen(false)} className="flex-1 py-3 rounded-xl font-black text-[9px] uppercase tracking-widest text-slate-400 hover:bg-slate-50">Cancelar</button>
-                    <button onClick={saveOrder} className="flex-[2] py-3 rounded-xl bg-indigo-600 text-white font-black text-[9px] uppercase tracking-[0.2em] shadow-xl hover:bg-indigo-700 transition-all active:scale-95">Guardar</button>
+                 <div className="pt-6 flex gap-3">
+                    <button onClick={() => setIsOrderModalOpen(false)} className="flex-1 py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest text-slate-400 hover:bg-slate-50 transition-all">Cancelar</button>
+                    <button onClick={saveOrder} className="flex-[2] py-4 rounded-2xl bg-indigo-600 text-white font-black text-[11px] uppercase tracking-[0.2em] shadow-xl hover:bg-indigo-700 transition-all active:scale-95">Guardar Pedido</button>
                  </div>
               </div>
            </div>
         </div>
       )}
 
+      {/* SUMMARY MODAL */}
       {showSummary && (
         <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-xl z-[200] flex items-center justify-center p-6 animate-in zoom-in duration-300">
            <div className="bg-white w-full max-w-sm rounded-[3rem] p-10 shadow-2xl relative flex flex-col items-center text-center overflow-hidden" ref={ticketRef}>
@@ -829,26 +843,28 @@ const App: React.FC = () => {
         </div>
       )}
       
+      {/* CLIENT MODAL */}
       {isClientModalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-6 animate-in fade-in duration-300">
            <div className="bg-white w-full max-w-md rounded-[3.5rem] p-12 shadow-2xl relative overflow-hidden">
               <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter mb-10 flex items-center gap-4"><div className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center text-white"><UsersIcon size={24}/></div> Ficha Cliente</h2>
               <div className="space-y-6">
-                 <div className="space-y-2"><label className="text-[11px] font-black text-slate-400 uppercase ml-2 tracking-widest">Nombre</label><input type="text" value={clientForm.name} onChange={e => setClientForm({...clientForm, name: e.target.value})} className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 font-black outline-none" /></div>
+                 <div className="space-y-2"><label className="text-[11px] font-black text-slate-400 uppercase ml-2 tracking-widest">Nombre</label><input type="text" value={clientForm.name} onChange={e => setClientForm({...clientForm, name: e.target.value})} className="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl p-4 font-black outline-none focus:border-indigo-500" /></div>
                  <div className="space-y-2">
                     <label className="text-[11px] font-black text-slate-400 uppercase ml-2 tracking-widest">WhatsApp</label>
-                    <input type="text" value={clientForm.phone} placeholder="+54221..." onChange={e => setClientForm({...clientForm, phone: e.target.value.replace(/[^0-9+]/g, '')})} className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 font-black outline-none" />
+                    <input type="text" value={clientForm.phone} placeholder="+54..." onChange={e => setClientForm({...clientForm, phone: e.target.value.replace(/[^0-9+]/g, '')})} className="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl p-4 font-black outline-none focus:border-indigo-500" />
                  </div>
-                 <div className="space-y-2"><label className="text-[11px] font-black text-slate-400 uppercase ml-2 tracking-widest">Dirección</label><input type="text" value={clientForm.address} onChange={e => setClientForm({...clientForm, address: e.target.value})} className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 font-black outline-none" /></div>
+                 <div className="space-y-2"><label className="text-[11px] font-black text-slate-400 uppercase ml-2 tracking-widest">Dirección</label><input type="text" value={clientForm.address} onChange={e => setClientForm({...clientForm, address: e.target.value})} className="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl p-4 font-black outline-none focus:border-indigo-500" /></div>
                  <div className="pt-6 flex gap-4">
                     <button onClick={() => setIsClientModalOpen(false)} className="flex-1 py-5 font-black text-slate-400 text-xs uppercase tracking-widest">Cerrar</button>
-                    <button onClick={saveClient} className="flex-[2] py-5 bg-slate-900 text-white font-black rounded-2xl shadow-xl text-xs uppercase tracking-widest active:scale-95">Guardar</button>
+                    <button onClick={saveClient} className="flex-[2] py-5 bg-slate-900 text-white font-black rounded-2xl shadow-xl text-xs uppercase tracking-widest active:scale-95 transition-all">Guardar Cliente</button>
                  </div>
               </div>
            </div>
         </div>
       )}
 
+      {/* CONFIRM MODAL */}
       {confirmModal && (
         <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-[300] flex items-center justify-center p-6 animate-in fade-in duration-200">
            <div className="bg-white w-full max-sm rounded-[2.5rem] p-8 shadow-2xl text-center border border-rose-100">
