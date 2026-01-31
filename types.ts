@@ -1,3 +1,4 @@
+
 export interface DesignItem {
   id: string;
   name: string;
@@ -39,7 +40,7 @@ export interface Client {
   name: string;
   phone: string;
   address: string;
-  createdAt: number;
+  created_at: number;
 }
 
 export interface Category {
@@ -56,15 +57,15 @@ export interface OrderStatus {
 
 export interface Order {
   id: string;
-  orderNumber: string;
-  clientId: string;
+  order_number: string;
+  client_id: string;
   width: number;
   height: number;
   quantity: number;
-  categoryId: string;
-  totalPrice: number;
+  category_id: string;
+  total_price: number;
   deposit: number; // Seña
   balance: number; // Restante
-  statusId: string;
-  createdAt: number;
+  status_id: string;
+  created_at: number;
 }
