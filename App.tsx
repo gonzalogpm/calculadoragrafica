@@ -112,6 +112,13 @@ const App: React.FC = () => {
   const [confirmModal, setConfirmModal] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
   const ticketRef = useRef<HTMLDivElement>(null);
 
+  // Formatear fechas de localstorage si vienen como número
+  const ensureISO = (val: any): string => {
+    if (!val) return new Date().toISOString();
+    if (typeof val === 'number') return new Date(val).toISOString();
+    return val;
+  };
+
   useEffect(() => {
     const init = async () => {
       const saved = localStorage.getItem(MASTER_KEY);
@@ -119,11 +126,10 @@ const App: React.FC = () => {
         try {
           let parsed = JSON.parse(saved);
           
-          // MIGRACIÓN DE DATOS LOCALES (camelCase a snake_case)
           if (parsed.clients) {
             parsed.clients = parsed.clients.map((c: any) => ({
               ...c,
-              created_at: c.created_at || c.createdAt || Date.now()
+              created_at: ensureISO(c.created_at || c.createdAt)
             }));
           }
           if (parsed.orders) {
@@ -134,7 +140,7 @@ const App: React.FC = () => {
               category_id: o.category_id || o.categoryId || '1',
               total_price: o.total_price || o.totalPrice || 0,
               status_id: o.status_id || o.statusId || 'hacer',
-              created_at: o.created_at || o.createdAt || Date.now()
+              created_at: ensureISO(o.created_at || o.createdAt)
             }));
           }
           
@@ -209,10 +215,11 @@ const App: React.FC = () => {
           name: c.name,
           phone: c.phone,
           address: c.address,
-          created_at: c.created_at,
+          created_at: ensureISO(c.created_at),
           user_id: session.user.id
         }));
-        await supabase.from('clients').upsert(clientsToUpload);
+        const { error } = await supabase.from('clients').upsert(clientsToUpload);
+        if (error) throw error;
       }
       if (appData.orders.length > 0) {
         const ordersToUpload = appData.orders.map(o => ({
@@ -227,10 +234,11 @@ const App: React.FC = () => {
           deposit: o.deposit,
           balance: o.balance,
           status_id: o.status_id,
-          created_at: o.created_at,
+          created_at: ensureISO(o.created_at),
           user_id: session.user.id
         }));
-        await supabase.from('orders').upsert(ordersToUpload);
+        const { error } = await supabase.from('orders').upsert(ordersToUpload);
+        if (error) throw error;
       }
       await supabase.from('settings').upsert({
         user_id: session.user.id,
@@ -241,8 +249,8 @@ const App: React.FC = () => {
       });
       alert("✅ Sincronización completa. Tus datos ya están en la nube.");
       await fetchCloudData(session.user.id);
-    } catch (err) {
-      alert("❌ Error al sincronizar.");
+    } catch (err: any) {
+      alert("❌ Error al sincronizar: " + err.message);
     } finally {
       setIsMigrating(false);
     }
@@ -404,7 +412,7 @@ const App: React.FC = () => {
       updatedOrder = { ...editingOrder, ...orderForm, total_price, balance } as Order;
       updateData('orders', appData.orders.map(o => o.id === editingOrder.id ? updatedOrder : o));
     } else {
-      updatedOrder = { ...orderForm, id: Date.now().toString(), total_price, balance, created_at: Date.now() } as Order;
+      updatedOrder = { ...orderForm, id: Date.now().toString(), total_price, balance, created_at: new Date().toISOString() } as Order;
       updateData('orders', [...appData.orders, updatedOrder]);
     }
 
@@ -424,7 +432,7 @@ const App: React.FC = () => {
       const matchesText = clientName.includes(search) || orderNum.includes(search);
       const matchesStatus = orderStatusFilter === 'all' || o.status_id === orderStatusFilter;
       return matchesText && matchesStatus;
-    }).sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
+    }).sort((a, b) => (new Date(b.created_at).getTime() || 0) - (new Date(a.created_at).getTime() || 0));
   }, [appData.orders, appData.clients, orderSearch, orderStatusFilter]);
 
   const [isClientModalOpen, setIsClientModalOpen] = useState(false);
@@ -441,22 +449,34 @@ const App: React.FC = () => {
   }, [appData.clients, clientSearch]);
 
   const saveClient = async () => {
-    if (!clientForm.name) return;
+    if (!clientForm.name || !clientForm.phone) {
+      alert("Nombre y WhatsApp son obligatorios.");
+      return;
+    }
+
+    // VALIDACIÓN DE WHATSAPP ÚNICO
+    const phoneExists = appData.clients.some(c => c.phone === clientForm.phone && c.id !== clientForm.id);
+    if (phoneExists) {
+      alert("🚨 Error: Ya existe un cliente registrado con este número de WhatsApp.");
+      return;
+    }
+
     let updatedClient: Client;
     if (clientForm.id) {
         updatedClient = { ...clientForm } as Client;
         updateData('clients', appData.clients.map(c => c.id === clientForm.id ? updatedClient : c));
     } else {
-        updatedClient = { ...clientForm, id: Date.now().toString(), created_at: Date.now() } as Client;
+        updatedClient = { ...clientForm, id: Date.now().toString(), created_at: new Date().toISOString() } as Client;
         updateData('clients', [...appData.clients, updatedClient]);
     }
+    
     if (supabase && session?.user) {
       const { error } = await supabase.from('clients').upsert({ 
         id: updatedClient.id,
         name: updatedClient.name,
         phone: updatedClient.phone,
         address: updatedClient.address,
-        created_at: updatedClient.created_at,
+        created_at: updatedClient.created_at, // Ya es ISO string
         user_id: session.user.id 
       });
       if (error) alert("Error al subir a la nube: " + error.message);
