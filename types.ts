@@ -41,6 +41,7 @@ export interface Client {
   phone: string;
   address: string;
   created_at: string;
+  user_id?: string;
 }
 
 export interface Category {
@@ -64,8 +65,16 @@ export interface Order {
   quantity: number;
   category_id: string;
   total_price: number;
-  deposit: number; // Seña
-  balance: number; // Restante
+  deposit: number;
+  balance: number;
   status_id: string;
   created_at: string;
+  user_id?: string;
+}
+
+export interface NotificationSettings {
+  newOrder: boolean;
+  newClient: boolean;
+  statusChange: boolean;
+  enabled: boolean;
 }

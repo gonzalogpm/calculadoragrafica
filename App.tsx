@@ -1,51 +1,16 @@
 
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { 
-  PlusIcon, 
-  TrashIcon, 
-  Settings2Icon, 
-  LayoutIcon, 
-  CalculatorIcon, 
-  TagIcon, 
-  LayersIcon, 
-  CheckCircle2Icon,
-  UsersIcon,
-  PackageIcon,
-  SearchIcon,
-  Share2Icon,
-  MessageCircleIcon,
-  Edit3Icon,
-  XIcon,
-  FilterIcon,
-  PhoneIcon,
-  MapPinIcon,
-  PercentIcon,
-  AlertTriangleIcon,
-  CloudIcon,
-  LogInIcon,
-  LogOutIcon,
-  Loader2Icon,
-  RulerIcon,
-  CloudOffIcon,
-  AlertCircleIcon,
-  SettingsIcon,
-  ShieldAlertIcon,
-  ClockIcon,
-  PartyPopperIcon,
-  CloudUploadIcon,
-  RefreshCwIcon,
-  TrendingUpIcon
+  PlusIcon, TrashIcon, Settings2Icon, LayoutIcon, CalculatorIcon, TagIcon, LayersIcon, 
+  CheckCircle2Icon, UsersIcon, PackageIcon, SearchIcon, Share2Icon, MessageCircleIcon, 
+  Edit3Icon, XIcon, FilterIcon, PhoneIcon, MapPinIcon, PercentIcon, AlertTriangleIcon, 
+  CloudIcon, LogInIcon, LogOutIcon, Loader2Icon, RulerIcon, CloudOffIcon, AlertCircleIcon, 
+  SettingsIcon, ShieldAlertIcon, ClockIcon, PartyPopperIcon, CloudUploadIcon, RefreshCwIcon, 
+  TrendingUpIcon, BellIcon, BellOffIcon, SmartphoneIcon, DownloadIcon, GlobeIcon
 } from 'lucide-react';
 import { 
-  DesignItem, 
-  CostTier, 
-  QuantityDiscount, 
-  CalculationResult, 
-  PackedDesign,
-  Client,
-  Category,
-  OrderStatus,
-  Order
+  DesignItem, CostTier, QuantityDiscount, CalculationResult, PackedDesign,
+  Client, Category, OrderStatus, Order, NotificationSettings
 } from './types';
 import { packDesigns } from './utils/layout';
 import { supabase } from './supabaseClient';
@@ -84,6 +49,13 @@ const DEFAULT_STATUSES: OrderStatus[] = [
   { id: 'entregado', name: 'Entregado', color: 'bg-emerald-500' },
 ];
 
+const DEFAULT_NOTIFICATIONS: NotificationSettings = {
+  newOrder: true,
+  newClient: true,
+  statusChange: true,
+  enabled: false
+};
+
 const DEFAULT_DATA = {
   sheetWidth: 58,
   profitMargin: 100,
@@ -99,6 +71,7 @@ const DEFAULT_DATA = {
   orders: [] as Order[],
   categories: DEFAULT_CATEGORIES,
   statuses: DEFAULT_STATUSES,
+  notifications: DEFAULT_NOTIFICATIONS
 };
 
 type AppDataType = typeof DEFAULT_DATA;
@@ -108,14 +81,15 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('dash');
   const [appData, setAppData] = useState<AppDataType>(DEFAULT_DATA);
   const [session, setSession] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
-  const [loading, setLoading] = useState(true);
   const [isMigrating, setIsMigrating] = useState(false);
   const [showSummary, setShowSummary] = useState<Order | null>(null);
   const [confirmModal, setConfirmModal] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
 
   const [newDesign, setNewDesign] = useState({ name: '', width: 0, height: 0, quantity: 1 });
   const [clientSearch, setClientSearch] = useState('');
@@ -126,14 +100,7 @@ const App: React.FC = () => {
   const [clientForm, setClientForm] = useState<Partial<Client>>({});
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
   const [orderForm, setOrderForm] = useState<Partial<Order>>({
-    order_number: '',
-    status_id: 'hacer',
-    client_id: '',
-    width: 0,
-    height: 0,
-    quantity: 1,
-    category_id: '',
-    deposit: 0
+    order_number: '', status_id: 'hacer', client_id: '', width: 0, height: 0, quantity: 1, category_id: '', deposit: 0
   });
 
   const ensureISO = (val: any): string => {
@@ -141,6 +108,73 @@ const App: React.FC = () => {
     if (typeof val === 'number') return new Date(val).toISOString();
     return String(val).length < 10 ? new Date().toISOString() : val;
   };
+
+  // PWA Install Logic
+  useEffect(() => {
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    });
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') setDeferredPrompt(null);
+  };
+
+  // Notification Trigger Logic
+  const notify = useCallback((title: string, body: string, type: keyof NotificationSettings) => {
+    if (!appData.notifications.enabled || !appData.notifications[type]) return;
+    
+    if (Notification.permission === 'granted') {
+      new Notification(title, {
+        body,
+        icon: 'https://cdn-icons-png.flaticon.com/512/9402/9402314.png'
+      });
+    }
+  }, [appData.notifications]);
+
+  const requestNotificationPermission = async () => {
+    const permission = await Notification.requestPermission();
+    if (permission === 'granted') {
+      setAppData(prev => ({ ...prev, notifications: { ...prev.notifications, enabled: true } }));
+    } else {
+      alert("Permiso de notificaciones denegado. Habilítalo en la configuración de tu navegador.");
+    }
+  };
+
+  // Realtime Subscriptions
+  useEffect(() => {
+    if (!supabase || !session?.user) return;
+
+    const channel = supabase
+      .channel('schema-db-changes')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, (payload) => {
+        if (payload.new.user_id === session.user.id) {
+          const client = appData.clients.find(c => c.id === payload.new.client_id);
+          notify('🔥 Nuevo Pedido', `El pedido #${payload.new.order_number} de ${client?.name || 'Cliente'} ha sido creado.`, 'newOrder');
+          fetchCloudData(session.user.id);
+        }
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders' }, (payload) => {
+        if (payload.new.user_id === session.user.id && payload.old.status_id !== payload.new.status_id) {
+          const status = appData.statuses.find(s => s.id === payload.new.status_id);
+          notify('🔄 Cambio de Estado', `Pedido #${payload.new.order_number} ahora en: ${status?.name}`, 'statusChange');
+          fetchCloudData(session.user.id);
+        }
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'clients' }, (payload) => {
+        if (payload.new.user_id === session.user.id) {
+          notify('👤 Nuevo Cliente', `${payload.new.name} se ha unido a la base de datos.`, 'newClient');
+          fetchCloudData(session.user.id);
+        }
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [session, appData.clients, appData.statuses, notify]);
 
   useEffect(() => {
     const init = async () => {
@@ -151,7 +185,7 @@ const App: React.FC = () => {
           if (parsed.clients) parsed.clients = parsed.clients.map((c: any) => ({ ...c, id: toSafeUUID(c.id), created_at: ensureISO(c.created_at) }));
           if (parsed.orders) parsed.orders = parsed.orders.map((o: any) => ({ ...o, id: toSafeUUID(o.id), client_id: toSafeUUID(o.client_id), category_id: toSafeUUID(o.category_id), created_at: ensureISO(o.created_at) }));
           if (parsed.categories) parsed.categories = parsed.categories.map((cat: any) => ({ ...cat, id: toSafeUUID(cat.id) }));
-          setAppData(prev => ({ ...prev, ...parsed }));
+          setAppData(prev => ({ ...prev, ...parsed, notifications: parsed.notifications || DEFAULT_NOTIFICATIONS }));
         } catch (e) { }
       }
       if (!supabase) { setLoading(false); return; }
@@ -163,13 +197,6 @@ const App: React.FC = () => {
       setLoading(false);
     };
     init();
-    if (supabase) {
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-        setSession(session);
-        if (session?.user) fetchCloudData(session.user.id);
-      });
-      return () => subscription.unsubscribe();
-    }
   }, []);
 
   const fetchCloudData = async (userId: string) => {
@@ -199,48 +226,26 @@ const App: React.FC = () => {
     try {
       if (appData.categories.length > 0) {
         const catsToUpload = appData.categories.map(cat => ({
-          id: toSafeUUID(cat.id),
-          name: cat.name,
-          price_per_unit: cat.pricePerUnit,
-          user_id: session.user.id
+          id: toSafeUUID(cat.id), name: cat.name, price_per_unit: cat.pricePerUnit, user_id: session.user.id
         }));
         await supabase.from('categories').upsert(catsToUpload);
       }
       if (appData.clients.length > 0) {
         const clsToUpload = appData.clients.map(c => ({
-          id: toSafeUUID(c.id),
-          name: c.name,
-          phone: c.phone,
-          address: c.address,
-          created_at: ensureISO(c.created_at),
-          user_id: session.user.id
+          id: toSafeUUID(c.id), name: c.name, phone: c.phone, address: c.address, created_at: ensureISO(c.created_at), user_id: session.user.id
         }));
         await supabase.from('clients').upsert(clsToUpload);
       }
       if (appData.orders.length > 0) {
         const ordsToUpload = appData.orders.map(o => ({
-          id: toSafeUUID(o.id),
-          order_number: o.order_number,
-          client_id: toSafeUUID(o.client_id),
-          category_id: toSafeUUID(o.category_id),
-          width: o.width,
-          height: o.height,
-          quantity: o.quantity,
-          total_price: o.total_price,
-          deposit: o.deposit,
-          balance: o.balance,
-          status_id: o.status_id,
-          created_at: ensureISO(o.created_at),
-          user_id: session.user.id
+          id: toSafeUUID(o.id), order_number: o.order_number, client_id: toSafeUUID(o.client_id), category_id: toSafeUUID(o.category_id),
+          width: o.width, height: o.height, quantity: o.quantity, total_price: o.total_price, deposit: o.deposit, balance: o.balance,
+          status_id: o.status_id, created_at: ensureISO(o.created_at), user_id: session.user.id
         }));
         await supabase.from('orders').upsert(ordsToUpload);
       }
       await supabase.from('settings').upsert({
-        user_id: session.user.id,
-        sheet_width: appData.sheetWidth,
-        profit_margin: appData.profitMargin,
-        design_spacing: appData.designSpacing,
-        updated_at: new Date().toISOString()
+        user_id: session.user.id, sheet_width: appData.sheetWidth, profit_margin: appData.profitMargin, design_spacing: appData.designSpacing, updated_at: new Date().toISOString()
       });
       alert("✅ Datos sincronizados correctamente.");
       await fetchCloudData(session.user.id);
@@ -282,7 +287,6 @@ const App: React.FC = () => {
     setConfirmModal({ title, message, onConfirm });
   };
 
-  // Lógica de Cálculo Centralizada
   const packResult = useMemo(() => packDesigns(appData.designs, appData.sheetWidth, appData.designSpacing), [appData.designs, appData.sheetWidth, appData.designSpacing]);
   
   const currentPricePerCm = useMemo(() => {
@@ -292,48 +296,26 @@ const App: React.FC = () => {
   }, [packResult.totalLength, appData.costTiers]);
 
   const calculateDetails = useCallback((item: DesignItem): CalculationResult => {
-    if (packResult.totalLength <= 0 || packResult.totalAreaUsed <= 0) {
-        return { unitProductionCost: 0, unitClientPrice: 0, totalProductionCost: 0, totalClientPrice: 0 };
-    }
-    
+    if (packResult.totalLength <= 0 || packResult.totalAreaUsed <= 0) return { unitProductionCost: 0, unitClientPrice: 0, totalProductionCost: 0, totalClientPrice: 0 };
     const totalSheetCost = packResult.totalLength * currentPricePerCm;
     const packedUnits = packResult.packed.filter(p => p.originalId === item.id);
     const actualPackedQuantity = packedUnits.length;
-    
-    if (actualPackedQuantity === 0) {
-        return { unitProductionCost: 0, unitClientPrice: 0, totalProductionCost: 0, totalClientPrice: 0 };
-    }
-
+    if (actualPackedQuantity === 0) return { unitProductionCost: 0, unitClientPrice: 0, totalProductionCost: 0, totalClientPrice: 0 };
     const itemPackedArea = packedUnits.reduce((acc, p) => acc + (p.width * p.height), 0);
     const totalProdCostForItem = (itemPackedArea / packResult.totalAreaUsed) * totalSheetCost;
     const unitProdCost = totalProdCostForItem / actualPackedQuantity;
-    
-    // Margen de ganancia
     const profitFactor = 1 + (appData.profitMargin / 100);
-    
-    // Descuento por cantidad (basado en la cantidad solicitada original)
     const discount = appData.quantityDiscounts.find(q => item.quantity >= q.minQty && item.quantity <= q.maxQty);
     const discFactor = discount ? (1 - discount.discountPercent / 100) : 1;
-    
     const unitClientPrice = unitProdCost * profitFactor * discFactor;
-    
-    return { 
-        unitProductionCost: unitProdCost, 
-        unitClientPrice: unitClientPrice, 
-        totalProductionCost: totalProdCostForItem, 
-        totalClientPrice: unitClientPrice * actualPackedQuantity 
-    };
+    return { unitProductionCost: unitProdCost, unitClientPrice: unitClientPrice, totalProductionCost: totalProdCostForItem, totalClientPrice: unitClientPrice * actualPackedQuantity };
   }, [packResult, currentPricePerCm, appData.profitMargin, appData.quantityDiscounts]);
 
   const tableTotals = useMemo(() => {
     return appData.designs.reduce((acc, d) => {
         const res = calculateDetails(d);
         const packedQty = packResult.packed.filter(p => p.originalId === d.id).length;
-        return {
-            prod: acc.prod + res.totalProductionCost,
-            client: acc.client + res.totalClientPrice,
-            qty: acc.qty + packedQty
-        };
+        return { prod: acc.prod + res.totalProductionCost, client: acc.client + res.totalClientPrice, qty: acc.qty + packedQty };
     }, { prod: 0, client: 0, qty: 0 });
   }, [appData.designs, calculateDetails, packResult.packed]);
 
@@ -351,7 +333,9 @@ const App: React.FC = () => {
   const saveClient = async () => {
     const client = clientForm.id ? { ...clientForm } as Client : { ...clientForm, id: generateUUID(), created_at: new Date().toISOString() } as Client;
     updateData('clients', clientForm.id ? appData.clients.map(c => c.id === client.id ? client : c) : [...appData.clients, client]);
-    if (supabase && session?.user) await supabase.from('clients').upsert({ ...client, id: toSafeUUID(client.id), user_id: session.user.id });
+    if (supabase && session?.user) {
+      await supabase.from('clients').upsert({ ...client, id: toSafeUUID(client.id), user_id: session.user.id });
+    }
     setIsClientModalOpen(false);
   };
 
@@ -366,7 +350,9 @@ const App: React.FC = () => {
     const dep = orderForm.deposit || 0;
     const order: Order = editingOrder ? { ...editingOrder, ...orderForm, total_price: total, balance: total - dep } as Order : { ...orderForm, id: generateUUID(), total_price: total, balance: total - dep, created_at: new Date().toISOString() } as Order;
     updateData('orders', editingOrder ? appData.orders.map(o => o.id === order.id ? order : o) : [...appData.orders, order]);
-    if (supabase && session?.user) await supabase.from('orders').upsert({ ...order, id: toSafeUUID(order.id), client_id: toSafeUUID(order.client_id), category_id: toSafeUUID(order.category_id), user_id: session.user.id });
+    if (supabase && session?.user) {
+      await supabase.from('orders').upsert({ ...order, id: toSafeUUID(order.id), client_id: toSafeUUID(order.client_id), category_id: toSafeUUID(order.category_id), user_id: session.user.id });
+    }
     setIsOrderModalOpen(false);
   };
 
@@ -436,6 +422,18 @@ const App: React.FC = () => {
                    <button disabled={isMigrating} onClick={pushLocalDataToCloud} className="bg-white text-indigo-600 px-10 py-5 rounded-2xl font-black text-xs uppercase shadow-xl hover:scale-105 transition-all">
                      {isMigrating ? <Loader2Icon className="animate-spin" size={18}/> : 'Subir a la Nube'}
                    </button>
+                </div>
+              )}
+              {deferredPrompt && (
+                <div className="bg-white rounded-[2rem] p-8 border shadow-sm flex items-center justify-between">
+                   <div className="flex items-center gap-4">
+                      <div className="bg-slate-100 p-3 rounded-2xl text-slate-900"><SmartphoneIcon/></div>
+                      <div>
+                        <h4 className="font-black text-xs uppercase">Instalar App</h4>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase">Accede más rápido desde tu pantalla de inicio.</p>
+                      </div>
+                   </div>
+                   <button onClick={handleInstallClick} className="bg-slate-900 text-white px-6 py-3 rounded-xl font-black text-[10px] uppercase flex items-center gap-2"><DownloadIcon size={14}/> Instalar</button>
                 </div>
               )}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
@@ -633,6 +631,34 @@ const App: React.FC = () => {
            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
               <section className="bg-white rounded-[2rem] p-8 border shadow-sm">
                  <div className="flex items-center justify-between mb-8">
+                    <h2 className="text-slate-900 font-black text-[10px] uppercase tracking-widest flex items-center gap-2"><BellIcon size={16}/> Notificaciones</h2>
+                    <div className={`w-3 h-3 rounded-full ${appData.notifications.enabled ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-slate-300'}`}></div>
+                 </div>
+                 <div className="space-y-6">
+                    {!appData.notifications.enabled ? (
+                      <button onClick={requestNotificationPermission} className="w-full bg-indigo-600 text-white py-4 rounded-xl font-black text-[10px] uppercase shadow-lg flex items-center justify-center gap-2 hover:scale-105 transition-all">
+                        <BellIcon size={14}/> Activar Alertas
+                      </button>
+                    ) : (
+                      <div className="space-y-4">
+                        <label className="flex items-center justify-between bg-slate-50 p-4 rounded-xl border">
+                           <span className="font-black text-[10px] uppercase text-slate-600">Nuevo Pedido</span>
+                           <input type="checkbox" checked={appData.notifications.newOrder} onChange={e => updateData('notifications', {...appData.notifications, newOrder: e.target.checked})} className="w-5 h-5 accent-indigo-600" />
+                        </label>
+                        <label className="flex items-center justify-between bg-slate-50 p-4 rounded-xl border">
+                           <span className="font-black text-[10px] uppercase text-slate-600">Nuevo Cliente</span>
+                           <input type="checkbox" checked={appData.notifications.newClient} onChange={e => updateData('notifications', {...appData.notifications, newClient: e.target.checked})} className="w-5 h-5 accent-indigo-600" />
+                        </label>
+                        <label className="flex items-center justify-between bg-slate-50 p-4 rounded-xl border">
+                           <span className="font-black text-[10px] uppercase text-slate-600">Cambio Estado</span>
+                           <input type="checkbox" checked={appData.notifications.statusChange} onChange={e => updateData('notifications', {...appData.notifications, statusChange: e.target.checked})} className="w-5 h-5 accent-indigo-600" />
+                        </label>
+                      </div>
+                    )}
+                 </div>
+              </section>
+              <section className="bg-white rounded-[2rem] p-8 border shadow-sm">
+                 <div className="flex items-center justify-between mb-8">
                     <h2 className="text-slate-900 font-black text-[10px] uppercase tracking-widest flex items-center gap-2"><TagIcon size={16}/> Categorías</h2>
                     <button onClick={() => updateData('categories', [...appData.categories, { id: generateUUID(), name: 'NUEVA', pricePerUnit: 0 }])} className="p-2 bg-indigo-50 text-indigo-600 rounded-lg transition-all hover:bg-indigo-100"><PlusIcon size={16}/></button>
                  </div>
@@ -659,23 +685,6 @@ const App: React.FC = () => {
                          <input type="number" value={tier.maxLargo} onChange={e => { const nt = [...appData.costTiers]; nt[idx].maxLargo = Number(e.target.value); updateData('costTiers', nt); }} className="w-10 bg-white rounded p-1 text-[9px] font-black text-center" />
                          <div className="flex-1 text-right font-black text-indigo-600 text-xs">$ <input type="number" value={tier.precioPorCm} onChange={e => { const nt = [...appData.costTiers]; nt[idx].precioPorCm = Number(e.target.value); updateData('costTiers', nt); }} className="w-14 bg-transparent text-right outline-none" /></div>
                          <button onClick={() => updateData('costTiers', appData.costTiers.filter(t => t.id !== tier.id))} className="text-slate-200 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-all"><TrashIcon size={14}/></button>
-                      </div>
-                    ))}
-                 </div>
-              </section>
-              <section className="bg-white rounded-[2rem] p-8 border shadow-sm">
-                 <div className="flex items-center justify-between mb-8">
-                    <h2 className="text-slate-900 font-black text-[10px] uppercase tracking-widest flex items-center gap-2"><PercentIcon size={16}/> Descuentos por Qty</h2>
-                    <button onClick={() => updateData('quantityDiscounts', [...appData.quantityDiscounts, { id: generateUUID(), minQty: 0, maxQty: 0, discountPercent: 0 }])} className="p-2 bg-indigo-50 text-indigo-600 rounded-lg transition-all hover:bg-indigo-100"><PlusIcon size={16}/></button>
-                 </div>
-                 <div className="space-y-4">
-                    {appData.quantityDiscounts.map((disc, idx) => (
-                      <div key={disc.id} className="flex gap-2 items-center bg-slate-50 p-3 rounded-xl border group">
-                         <input type="number" value={disc.minQty} onChange={e => { const nd = [...appData.quantityDiscounts]; nd[idx].minQty = Number(e.target.value); updateData('quantityDiscounts', nd); }} className="w-10 bg-white rounded p-1 text-[9px] font-black text-center" />
-                         <span className="text-slate-300">→</span>
-                         <input type="number" value={disc.maxQty} onChange={e => { const nd = [...appData.quantityDiscounts]; nd[idx].maxQty = Number(e.target.value); updateData('quantityDiscounts', nd); }} className="w-10 bg-white rounded p-1 text-[9px] font-black text-center" />
-                         <div className="flex-1 text-right font-black text-emerald-600 text-xs"><input type="number" value={disc.discountPercent} onChange={e => { const nd = [...appData.quantityDiscounts]; nd[idx].discountPercent = Number(e.target.value); updateData('quantityDiscounts', nd); }} className="w-10 bg-transparent text-right outline-none" />%</div>
-                         <button onClick={() => updateData('quantityDiscounts', appData.quantityDiscounts.filter(d => d.id !== disc.id))} className="text-slate-200 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-all"><TrashIcon size={14}/></button>
                       </div>
                     ))}
                  </div>
