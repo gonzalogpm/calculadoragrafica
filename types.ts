@@ -1,4 +1,3 @@
-
 export interface DesignItem {
   id: string;
   name: string;
@@ -33,4 +32,39 @@ export interface CalculationResult {
   unitClientPrice: number;
   totalProductionCost: number;
   totalClientPrice: number;
+}
+
+export interface Client {
+  id: string;
+  name: string;
+  phone: string;
+  address: string;
+  createdAt: number;
+}
+
+export interface Category {
+  id: string;
+  name: string;
+  pricePerUnit: number;
+}
+
+export interface OrderStatus {
+  id: string;
+  name: string;
+  color: string;
+}
+
+export interface Order {
+  id: string;
+  orderNumber: string;
+  clientId: string;
+  width: number;
+  height: number;
+  quantity: number;
+  categoryId: string;
+  totalPrice: number;
+  deposit: number; // Seña
+  balance: number; // Restante
+  statusId: string;
+  createdAt: number;
 }

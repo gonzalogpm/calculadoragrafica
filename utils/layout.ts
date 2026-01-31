@@ -1,10 +1,9 @@
-
 import { DesignItem, PackedDesign } from '../types';
 
 /**
- * Packs multiple items into a sheet of fixed width, minimizing total length.
- * It calculates the best orientation for each design group based on the total 
- * length it would occupy given its quantity, ensuring the most efficient use of space.
+ * Packs designs using an advanced Skyline algorithm optimized for minimum length.
+ * For each item, it dynamically tries both orientations and chooses the one
+ * that results in the lowest possible top edge (Y + Height).
  */
 export const packDesigns = (
   items: DesignItem[],
@@ -13,107 +12,120 @@ export const packDesigns = (
 ): { packed: PackedDesign[]; totalLength: number; totalAreaUsed: number } => {
   if (items.length === 0) return { packed: [], totalLength: 0, totalAreaUsed: 0 };
 
-  const individualUnits: PackedDesign[] = [];
-
+  const individualUnits: Omit<PackedDesign, 'x' | 'y' | 'rotated'>[] = [];
   items.forEach(item => {
-    const dim1 = item.width;
-    const dim2 = item.height;
+    // If neither side fits the sheet, we skip it
+    if (item.width > sheetWidth && item.height > sheetWidth) return;
 
-    // Calculate performance for Orientation A (W=dim1, H=dim2)
-    let lengthA = Infinity;
-    const fitsA = dim1 <= sheetWidth;
-    if (fitsA) {
-      const perRow = Math.floor((sheetWidth + spacing) / (dim1 + spacing)) || 1;
-      const actualPerRow = Math.min(perRow, item.quantity);
-      const rows = Math.ceil(item.quantity / actualPerRow);
-      lengthA = rows * dim2 + (rows - 1) * spacing;
-    }
-
-    // Calculate performance for Orientation B (W=dim2, H=dim1)
-    let lengthB = Infinity;
-    const fitsB = dim2 <= sheetWidth;
-    if (fitsB) {
-      const perRow = Math.floor((sheetWidth + spacing) / (dim2 + spacing)) || 1;
-      const actualPerRow = Math.min(perRow, item.quantity);
-      const rows = Math.ceil(item.quantity / actualPerRow);
-      lengthB = rows * dim1 + (rows - 1) * spacing;
-    }
-
-    // Choose the orientation that results in less total length
-    let finalW: number, finalH: number, rotated: boolean;
-
-    if (lengthA <= lengthB && fitsA) {
-      finalW = dim1;
-      finalH = dim2;
-      rotated = false;
-    } else if (fitsB) {
-      finalW = dim2;
-      finalH = dim1;
-      rotated = true;
-    } else if (fitsA) {
-      // Fallback if only A fits
-      finalW = dim1;
-      finalH = dim2;
-      rotated = false;
-    } else {
-      // Neither fits? Force A and it will overflow (UI handles it)
-      finalW = dim1;
-      finalH = dim2;
-      rotated = false;
-    }
-
-    // Assign originalId to allow cross-referencing to the base design
     for (let i = 0; i < item.quantity; i++) {
       individualUnits.push({
         ...item,
         id: `${item.id}-${i}`,
         originalId: item.id,
-        x: 0,
-        y: 0,
-        width: finalW,
-        height: finalH,
-        rotated: rotated
       });
     }
   });
 
-  // Sort by height (decreasing) - Standard FFDH heuristic
-  individualUnits.sort((a, b) => b.height - a.height);
+  // Sorting by the largest dimension helps in creating a more stable base for the packing
+  individualUnits.sort((a, b) => Math.max(b.width, b.height) - Math.max(a.width, a.height));
 
-  let currentX = 0;
-  let currentY = 0;
-  let rowMaxHeight = 0;
+  let skyline = [{ x: 0, y: 0, width: sheetWidth }];
+  const packed: PackedDesign[] = [];
   let totalAreaUsed = 0;
 
-  const packed: PackedDesign[] = [];
+  individualUnits.forEach(unit => {
+    const orientations = [
+      { w: unit.width, h: unit.height, rotated: false },
+      { w: unit.height, h: unit.width, rotated: true },
+    ].filter(o => o.w <= sheetWidth);
 
-  individualUnits.forEach((unit, index) => {
-    const w = unit.width;
-    const h = unit.height;
+    let bestChoice: { x: number, y: number, w: number, h: number, rotated: boolean, skylineIndex: number } | null = null;
+    let minTopEdge = Infinity;
 
-    // Check if item fits in current row
-    if (currentX + w > sheetWidth && currentX > 0) {
-      // Start new row
-      currentX = 0;
-      currentY += rowMaxHeight + spacing;
-      rowMaxHeight = 0;
+    // Evaluate both orientations to find which one results in the smallest local length increase
+    orientations.forEach(orient => {
+      const w = orient.w;
+      const h = orient.h;
+
+      for (let i = 0; i < skyline.length; i++) {
+        let currentWidth = 0;
+        let maxYInRange = 0;
+        let possible = false;
+
+        for (let j = i; j < skyline.length; j++) {
+          currentWidth += skyline[j].width;
+          maxYInRange = Math.max(maxYInRange, skyline[j].y);
+          if (currentWidth >= w - 0.0001) {
+            possible = true;
+            break;
+          }
+        }
+
+        if (possible) {
+          const topEdge = maxYInRange + h;
+          // Priority 1: Lowest top edge. Priority 2: Lowest X (to stay left)
+          if (topEdge < minTopEdge - 0.0001 || (Math.abs(topEdge - minTopEdge) < 0.0001 && skyline[i].x < (bestChoice?.x ?? Infinity))) {
+            minTopEdge = topEdge;
+            bestChoice = { 
+              x: skyline[i].x, 
+              y: maxYInRange, 
+              w: w, 
+              h: h, 
+              rotated: orient.rotated, 
+              skylineIndex: i 
+            };
+          }
+        }
+      }
+    });
+
+    if (bestChoice) {
+      const { x, y, w, h, rotated, skylineIndex } = bestChoice;
+      
+      packed.push({
+        ...unit,
+        x,
+        y,
+        width: w,
+        height: h,
+        rotated,
+      });
+      
+      totalAreaUsed += w * h;
+
+      // Update skyline
+      const widthToOccupy = Math.min(w + spacing, sheetWidth - x);
+      const newHeight = y + h + spacing;
+
+      const newSegment = { x, y: newHeight, width: widthToOccupy };
+
+      let consumedWidth = 0;
+      let idx = skylineIndex;
+      while (consumedWidth < widthToOccupy - 0.0001 && idx < skyline.length) {
+        if (skyline[idx].width <= (widthToOccupy - consumedWidth) + 0.0001) {
+          consumedWidth += skyline[idx].width;
+          skyline.splice(idx, 1);
+        } else {
+          skyline[idx].x += (widthToOccupy - consumedWidth);
+          skyline[idx].width -= (widthToOccupy - consumedWidth);
+          consumedWidth = widthToOccupy;
+        }
+      }
+      
+      skyline.splice(skylineIndex, 0, newSegment);
+
+      // Merge redundant segments
+      for (let k = 0; k < skyline.length - 1; k++) {
+        if (Math.abs(skyline[k].y - skyline[k+1].y) < 0.0001) {
+          skyline[k].width += skyline[k+1].width;
+          skyline.splice(k+1, 1);
+          k--;
+        }
+      }
     }
-
-    unit.x = currentX;
-    unit.y = currentY;
-
-    packed.push(unit);
-
-    currentX += w + spacing;
-    rowMaxHeight = Math.max(rowMaxHeight, h);
-    totalAreaUsed += w * h;
   });
 
-  const totalLength = packed.length > 0 ? currentY + rowMaxHeight : 0;
+  const totalLength = packed.length > 0 ? Math.max(...packed.map(p => p.y + p.height)) : 0;
 
-  return {
-    packed,
-    totalLength,
-    totalAreaUsed
-  };
+  return { packed, totalLength, totalAreaUsed };
 };

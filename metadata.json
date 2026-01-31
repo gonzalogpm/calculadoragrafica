@@ -1,5 +1,6 @@
+
 {
-  "name": "Calculadora de Costos de Impresión Pro",
+  "name": "CreaStickers",
   "description": "Un sistema avanzado para el cálculo de costos y optimización de pliegos de impresión, permitiendo gestionar márgenes, descuentos por cantidad y escalas de precios por longitud total.",
   "requestFramePermissions": []
 }
