@@ -1,19 +1,23 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-// Intentar obtener variables de diferentes fuentes posibles en entornos Vite/Vercel/Navegador
-const supabaseUrl = 
-  (import.meta as any).env?.VITE_SUPABASE_URL || 
-  (window as any).env?.VITE_SUPABASE_URL;
+// Función para obtener variables de forma segura en cualquier entorno
+const getEnv = (key: string) => {
+  try {
+    return (import.meta as any).env?.[key] || (window as any).env?.[key] || "";
+  } catch {
+    return "";
+  }
+};
 
-const supabaseAnonKey = 
-  (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || 
-  (window as any).env?.VITE_SUPABASE_ANON_KEY;
+const supabaseUrl = getEnv('VITE_SUPABASE_URL');
+const supabaseAnonKey = getEnv('VITE_SUPABASE_ANON_KEY');
 
-export const supabase = (supabaseUrl && supabaseAnonKey) 
+// Solo creamos el cliente si ambas variables existen y no son strings vacíos
+export const supabase = (supabaseUrl && supabaseAnonKey && supabaseUrl.startsWith('http')) 
   ? createClient(supabaseUrl, supabaseAnonKey) 
   : null;
 
 if (!supabase) {
-  console.warn("Supabase no configurado. Las variables VITE_SUPABASE_URL o VITE_SUPABASE_ANON_KEY faltan en el entorno.");
+  console.warn("⚠️ CreaStickers: Supabase no detectado. Revisa las Variables de Entorno (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY) en tu panel de deploy.");
 }
