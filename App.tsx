@@ -8,7 +8,7 @@ import {
   SmartphoneIcon, DownloadIcon, BellIcon, CloudUploadIcon
 } from 'lucide-react';
 import { 
-  DesignItem, CostTier, QuantityDiscount, CalculationResult, PackedDesign,
+  DesignItem, CostTier, QuantityDiscount, CalculationResult, 
   Client, Category, OrderStatus, Order, NotificationSettings
 } from './types';
 import { packDesigns } from './utils/layout';
@@ -138,30 +138,44 @@ const App: React.FC = () => {
     }
   }, [appData?.notifications]);
 
-  const requestNotificationPermission = async () => {
-    const permission = await Notification.requestPermission();
-    if (permission === 'granted') {
-      setAppData(prev => ({ ...prev, notifications: { ...prev.notifications, enabled: true } }));
-    } else {
-      alert("Permiso de notificaciones denegado. Habilítalo en la configuración.");
-    }
+  const fetchCloudData = async (userId: string) => {
+    const client = supabase;
+    if (!client) return;
+    try {
+      const [{ data: setts }, { data: cls }, { data: ords }, { data: cats }] = await Promise.all([
+        client.from('settings').select('*').eq('user_id', userId).maybeSingle(),
+        client.from('clients').select('*').eq('user_id', userId),
+        client.from('orders').select('*').eq('user_id', userId),
+        client.from('categories').select('*').eq('user_id', userId)
+      ]);
+      setAppData(prev => ({
+        ...prev,
+        sheetWidth: Number(setts?.sheet_width) || prev.sheetWidth,
+        profitMargin: Number(setts?.profit_margin) || prev.profitMargin,
+        designSpacing: Number(setts?.design_spacing) || prev.designSpacing,
+        clients: (cls && cls.length > 0) ? cls : prev.clients,
+        orders: (ords && ords.length > 0) ? ords : prev.orders,
+        categories: (cats && cats.length > 0) ? cats.map((c: any) => ({ ...c, id: toSafeUUID(c.id), pricePerUnit: c.price_per_unit || c.pricePerUnit })) : prev.categories
+      }));
+    } catch (e) { }
   };
 
   useEffect(() => {
-    if (!supabase || !session?.user) return;
+    const client = supabase;
+    if (!client || !session?.user) return;
 
-    const channel = supabase
+    const channel = client
       .channel('schema-db-changes')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, (payload) => {
         if (payload.new.user_id === session.user.id) {
-          const client = appData.clients.find(c => c.id === payload.new.client_id);
-          notify('🔥 Nuevo Pedido', `Pedido #${payload.new.order_number} de ${client?.name || 'Cliente'}`, 'newOrder');
+          const clientFound = (appData.clients || []).find(c => c && c.id === payload.new.client_id);
+          notify('🔥 Nuevo Pedido', `Pedido #${payload.new.order_number} de ${clientFound?.name || 'Cliente'}`, 'newOrder');
           fetchCloudData(session.user.id);
         }
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders' }, (payload) => {
         if (payload.new.user_id === session.user.id && payload.old.status_id !== payload.new.status_id) {
-          const status = appData.statuses.find(s => s.id === payload.new.status_id);
+          const status = (appData.statuses || []).find(s => s && s.id === payload.new.status_id);
           notify('🔄 Cambio de Estado', `Pedido #${payload.new.order_number}: ${status?.name}`, 'statusChange');
           fetchCloudData(session.user.id);
         }
@@ -174,7 +188,7 @@ const App: React.FC = () => {
       })
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    return () => { client.removeChannel(channel); };
   }, [session, appData.clients, appData.statuses, notify]);
 
   useEffect(() => {
@@ -189,9 +203,10 @@ const App: React.FC = () => {
           setAppData(prev => ({ ...prev, ...parsed, notifications: parsed.notifications || DEFAULT_NOTIFICATIONS }));
         } catch (e) { }
       }
-      if (supabase) {
+      const client = supabase;
+      if (client) {
         try {
-          const { data: { session: cur } } = await supabase.auth.getSession();
+          const { data: { session: cur } } = await client.auth.getSession();
           setSession(cur);
           if (cur?.user) await fetchCloudData(cur.user.id);
         } catch (e) { }
@@ -201,42 +216,22 @@ const App: React.FC = () => {
     init();
   }, []);
 
-  const fetchCloudData = async (userId: string) => {
-    if (!supabase) return;
-    try {
-      const [{ data: setts }, { data: cls }, { data: ords }, { data: cats }] = await Promise.all([
-        supabase.from('settings').select('*').eq('user_id', userId).maybeSingle(),
-        supabase.from('clients').select('*').eq('user_id', userId),
-        supabase.from('orders').select('*').eq('user_id', userId),
-        supabase.from('categories').select('*').eq('user_id', userId)
-      ]);
-      setAppData(prev => ({
-        ...prev,
-        sheetWidth: Number(setts?.sheet_width) || prev.sheetWidth,
-        profitMargin: Number(setts?.profit_margin) || prev.profitMargin,
-        designSpacing: Number(setts?.design_spacing) || prev.designSpacing,
-        clients: (cls && cls.length > 0) ? cls : prev.clients,
-        orders: (ords && ords.length > 0) ? ords : prev.orders,
-        categories: (cats && cats.length > 0) ? cats.map((c: any) => ({ ...c, id: toSafeUUID(c.id), pricePerUnit: c.price_per_unit || c.pricePerUnit })) : prev.categories
-      }));
-    } catch (e) { }
-  };
-
   const pushLocalDataToCloud = async () => {
-    if (!supabase || !session?.user) return;
+    const client = supabase;
+    if (!client || !session?.user) return;
     setIsMigrating(true);
     try {
       if (appData.categories.length > 0) {
         const catsToUpload = appData.categories.map(cat => ({
           id: toSafeUUID(cat.id), name: cat.name, price_per_unit: cat.pricePerUnit, user_id: session.user.id
         }));
-        await supabase.from('categories').upsert(catsToUpload);
+        await client.from('categories').upsert(catsToUpload);
       }
       if (appData.clients.length > 0) {
         const clsToUpload = appData.clients.map(c => ({
           id: toSafeUUID(c.id), name: c.name, phone: c.phone, address: c.address, created_at: ensureISO(c.created_at), user_id: session.user.id
         }));
-        await supabase.from('clients').upsert(clsToUpload);
+        await client.from('clients').upsert(clsToUpload);
       }
       if (appData.orders.length > 0) {
         const ordsToUpload = appData.orders.map(o => ({
@@ -244,9 +239,9 @@ const App: React.FC = () => {
           width: o.width, height: o.height, quantity: o.quantity, total_price: o.total_price, deposit: o.deposit, balance: o.balance,
           status_id: o.status_id, created_at: ensureISO(o.created_at), user_id: session.user.id
         }));
-        await supabase.from('orders').upsert(ordsToUpload);
+        await client.from('orders').upsert(ordsToUpload);
       }
-      await supabase.from('settings').upsert({
+      await client.from('settings').upsert({
         user_id: session.user.id, sheet_width: appData.sheetWidth, profit_margin: appData.profitMargin, design_spacing: appData.designSpacing, updated_at: new Date().toISOString()
       });
       alert("✅ Datos sincronizados.");
@@ -260,12 +255,13 @@ const App: React.FC = () => {
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!supabase) return;
+    const client = supabase;
+    if (!client) return;
     setAuthLoading(true);
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword });
+      const { error } = await client.auth.signInWithPassword({ email: authEmail, password: authPassword });
       if (error) {
-        const { error: sError } = await supabase.auth.signUp({ email: authEmail, password: authPassword });
+        const { error: sError } = await client.auth.signUp({ email: authEmail, password: authPassword });
         if (sError) throw sError;
       }
       setIsAuthModalOpen(false);
@@ -294,7 +290,7 @@ const App: React.FC = () => {
     const defaultRes = { unitProductionCost: 0, unitClientPrice: 0, totalProductionCost: 0, totalClientPrice: 0 };
     if (!item || packResult.totalLength <= 0 || packResult.totalAreaUsed <= 0) return defaultRes;
     const totalSheetCost = packResult.totalLength * currentPricePerCm;
-    const packedUnits = packResult.packed.filter(p => p && p.originalId === item.id);
+    const packedUnits = (packResult.packed || []).filter(p => p && p.originalId === item.id);
     const actualPackedQuantity = packedUnits.length;
     if (actualPackedQuantity === 0) return defaultRes;
     const itemPackedArea = packedUnits.reduce((acc, p) => acc + (p.width * p.height), 0);
@@ -312,7 +308,7 @@ const App: React.FC = () => {
     const designs = Array.isArray(appData.designs) ? appData.designs : [];
     return designs.reduce((acc, d) => {
         const res = calculateDetails(d);
-        const packedQty = packResult.packed.filter(p => p && p.originalId === d.id).length;
+        const packedQty = (packResult.packed || []).filter(p => p && p.originalId === d.id).length;
         return { prod: acc.prod + res.totalProductionCost, client: acc.client + res.totalClientPrice, qty: acc.qty + packedQty };
     }, { prod: 0, client: 0, qty: 0 });
   }, [appData.designs, calculateDetails, packResult.packed]);
@@ -323,9 +319,9 @@ const App: React.FC = () => {
     const s = (orderSearch || '').toLowerCase();
     return orders.filter(o => {
       if (!o) return false;
-      const client = clients.find(c => c && c.id === o.client_id);
-      const nameMatch = (client?.name || '').toLowerCase().includes(s);
-      const numMatch = (o.order_number || '').toLowerCase().includes(s);
+      const clientFound = clients.find(c => c && c.id === o.client_id);
+      const nameMatch = (clientFound?.name || '').toLowerCase().includes(s);
+      const numMatch = String(o.order_number || '').toLowerCase().includes(s);
       const statusMatch = statusFilter === 'all' || o.status_id === statusFilter;
       return (nameMatch || numMatch) && statusMatch;
     }).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
@@ -341,6 +337,15 @@ const App: React.FC = () => {
       return nameMatch || phoneMatch;
     });
   }, [appData.clients, clientSearch]);
+
+  const requestNotificationPermission = async () => {
+    const permission = await Notification.requestPermission();
+    if (permission === 'granted') {
+      setAppData(prev => ({ ...prev, notifications: { ...prev.notifications, enabled: true } }));
+    } else {
+      alert("Permiso de notificaciones denegado.");
+    }
+  };
 
   const addDesign = () => {
     if (newDesign.width <= 0 || newDesign.height <= 0 || newDesign.quantity <= 0) return;
@@ -475,7 +480,7 @@ const App: React.FC = () => {
                     <tbody className="divide-y">
                       {(appData.designs || []).map(d => {
                         const res = calculateDetails(d);
-                        const packedQty = packResult.packed.filter(p => p && p.originalId === d.id).length;
+                        const packedQty = (packResult.packed || []).filter(p => p && p.originalId === d.id).length;
                         return (
                           <tr key={d.id} className="group">
                             <td className="py-6"><div className="font-black text-slate-900 uppercase text-xs">{d.name}</div><div className="text-[10px] font-bold text-slate-400 uppercase">{d.width}x{d.height} CM • {packedQty}/{d.quantity}</div></td>
@@ -508,7 +513,7 @@ const App: React.FC = () => {
                         {st === 'all' ? 'Todos' : appData.statuses.find(s => s.id === st)?.name}
                       </button>
                     ))}
-                    <button onClick={() => { setEditingOrder(null); setOrderForm({ order_number: String(appData.orders.length + 1).padStart(4, '0'), status_id: 'hacer', client_id: '', width: 0, height: 0, quantity: 1, category_id: '', deposit: 0 }); setIsOrderModalOpen(true); }} className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-black text-[10px] uppercase shadow-lg flex items-center gap-2 hover:scale-105 transition-all"><PlusIcon size={16}/> Cargar</button>
+                    <button onClick={() => { setEditingOrder(null); setOrderForm({ order_number: String((appData.orders?.length || 0) + 1).padStart(4, '0'), status_id: 'hacer', client_id: '', width: 0, height: 0, quantity: 1, category_id: '', deposit: 0 }); setIsOrderModalOpen(true); }} className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-black text-[10px] uppercase shadow-lg flex items-center gap-2 hover:scale-105 transition-all"><PlusIcon size={16}/> Cargar</button>
                  </div>
               </div>
               <div className="grid gap-4">
@@ -667,7 +672,7 @@ const App: React.FC = () => {
                     <input type="number" placeholder="Seña" value={orderForm.deposit || ''} onChange={e => setOrderForm({...orderForm, deposit: Number(e.target.value)})} className="w-full bg-emerald-50 p-3 rounded-xl font-black text-emerald-700 border-none" />
                  </div>
                  <div className="pt-4 flex gap-4"><button onClick={() => setIsOrderModalOpen(false)} className="flex-1 font-black text-slate-400 uppercase text-xs">Cerrar</button><button onClick={async () => {
-                    const cat = appData.categories.find(c => c.id === orderForm.category_id);
+                    const cat = (appData.categories || []).find(c => c && c.id === orderForm.category_id);
                     const total = (cat?.pricePerUnit || 0) * (orderForm.quantity || 0);
                     const dep = orderForm.deposit || 0;
                     const order: Order = editingOrder ? { ...editingOrder, ...orderForm, total_price: total, balance: total - dep } as Order : { ...orderForm, id: generateUUID(), total_price: total, balance: total - dep, created_at: new Date().toISOString() } as Order;
@@ -692,9 +697,9 @@ const App: React.FC = () => {
                  <div className="flex justify-between text-rose-500 font-black"><span>Saldo:</span><span>${showSummary.balance.toLocaleString()}</span></div>
               </div>
               <button onClick={() => {
-                const c = appData.clients.find(cl => cl.id === showSummary.client_id);
+                const cFound = (appData.clients || []).find(cl => cl && cl.id === showSummary.client_id);
                 const text = `*Ticket #${showSummary.order_number}*\n*Total:* $${showSummary.total_price}\n*Saldo:* $${showSummary.balance}`;
-                window.open(`https://wa.me/${c?.phone?.replace(/\D/g,'')}?text=${encodeURIComponent(text)}`, '_blank');
+                window.open(`https://wa.me/${cFound?.phone?.replace(/\D/g,'')}?text=${encodeURIComponent(text)}`, '_blank');
               }} className="w-full bg-emerald-500 text-white py-4 rounded-xl font-black flex items-center justify-center gap-3 shadow-xl hover:bg-emerald-600 transition-all"><MessageCircleIcon size={18}/> WhatsApp</button>
            </div>
         </div>
