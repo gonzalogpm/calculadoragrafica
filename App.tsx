@@ -125,6 +125,9 @@ const App: React.FC = () => {
   const [showSummary, setShowSummary] = useState<Order | null>(null);
   const [confirmModal, setConfirmModal] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
 
+  // Added missing newDesign state to handle new design form inputs
+  const [newDesign, setNewDesign] = useState({ name: '', width: 0, height: 0, quantity: 1 });
+
   const ensureISO = (val: any): string => {
     if (!val) return new Date().toISOString();
     if (typeof val === 'number') return new Date(val).toISOString();
@@ -177,7 +180,7 @@ const App: React.FC = () => {
         designSpacing: Number(setts?.design_spacing) || prev.designSpacing,
         clients: (cls && cls.length > 0) ? cls : prev.clients,
         orders: (ords && ords.length > 0) ? ords : prev.orders,
-        categories: (cats && cats.length > 0) ? cats.map((c: any) => ({ ...c, pricePerUnit: c.price_per_unit || c.pricePerUnit })) : prev.categories
+        categories: (cats && cats.length > 0) ? cats.map((c: any) => ({ ...c, id: toSafeUUID(c.id), pricePerUnit: c.price_per_unit || c.pricePerUnit })) : prev.categories
       }));
     } catch (e) { }
   };
@@ -258,7 +261,7 @@ const App: React.FC = () => {
       if (signInError) {
         const { error: signUpError } = await supabase.auth.signUp({ email: authEmail, password: authPassword });
         if (signUpError) alert(`❌ Error: ${signUpError.message}`);
-        else { alert("✅ Revisa tu email para confirmar."); setIsAuthModalOpen(false); }
+        else { alert("✅ Registro exitoso. Confirma tu email."); setIsAuthModalOpen(false); }
       } else setIsAuthModalOpen(false);
     } catch (e) { alert("Error de conexión"); } finally { setAuthLoading(false); }
   };
@@ -267,8 +270,7 @@ const App: React.FC = () => {
     setConfirmModal({ title, message, onConfirm });
   };
 
-  // Presupuestador
-  const [newDesign, setNewDesign] = useState<Omit<DesignItem, 'id'>>({ name: '', width: 0, height: 0, quantity: 1 });
+  // Presupuestador Logic
   const packResult = useMemo(() => packDesigns(appData.designs, appData.sheetWidth, appData.designSpacing), [appData.designs, appData.sheetWidth, appData.designSpacing]);
   
   const currentPricePerCm = useMemo(() => {
@@ -278,21 +280,49 @@ const App: React.FC = () => {
   }, [packResult.totalLength, appData.costTiers]);
 
   const calculateDetails = useCallback((item: DesignItem): CalculationResult => {
-    if (packResult.totalLength <= 0) return { unitProductionCost: 0, unitClientPrice: 0, totalProductionCost: 0, totalClientPrice: 0 };
+    // Si no se pudo empaquetar nada, o el item no está en los empaquetados, devolvemos 0
+    if (packResult.totalLength <= 0 || packResult.totalAreaUsed <= 0) {
+        return { unitProductionCost: 0, unitClientPrice: 0, totalProductionCost: 0, totalClientPrice: 0 };
+    }
+    
     const totalSheetCost = packResult.totalLength * currentPricePerCm;
-    const totalArea = appData.designs.reduce((acc, d) => acc + (d.width * d.height * d.quantity), 0);
+    
+    // El costo se distribuye en función del área REAL ocupada por el diseño en el pliego
+    // Esto previene que si un diseño es inválido y no se empaqueta, afecte el costo de los demás
     const itemArea = (item.width * item.height) * item.quantity;
-    const prodCost = totalArea > 0 ? (itemArea / totalArea) * totalSheetCost : 0;
+    
+    // Proporción de este diseño sobre el área total empaquetada
+    const prodCost = (itemArea / packResult.totalAreaUsed) * totalSheetCost;
     const unitProd = item.quantity > 0 ? prodCost / item.quantity : 0;
+    
     const discount = appData.quantityDiscounts.find(q => item.quantity >= q.minQty && item.quantity <= q.maxQty);
     const discFactor = discount ? (1 - discount.discountPercent / 100) : 1;
+    
     const unitPrice = unitProd * (1 + (appData.profitMargin / 100)) * discFactor;
-    return { unitProductionCost: unitProd, unitClientPrice: unitPrice, totalProductionCost: prodCost, totalClientPrice: unitPrice * item.quantity };
-  }, [appData.designs, packResult.totalLength, currentPricePerCm, appData.profitMargin, appData.quantityDiscounts]);
+    
+    return { 
+        unitProductionCost: unitProd, 
+        unitClientPrice: unitPrice, 
+        totalProductionCost: prodCost, 
+        totalClientPrice: unitPrice * item.quantity 
+    };
+  }, [packResult.totalLength, packResult.totalAreaUsed, currentPricePerCm, appData.profitMargin, appData.quantityDiscounts]);
 
+  const tableTotals = useMemo(() => {
+    return appData.designs.reduce((acc, d) => {
+        const res = calculateDetails(d);
+        return {
+            prod: acc.prod + res.totalProductionCost,
+            client: acc.client + res.totalClientPrice,
+            qty: acc.qty + Number(d.quantity)
+        };
+    }, { prod: 0, client: 0, qty: 0 });
+  }, [appData.designs, calculateDetails]);
+
+  // Added logic to use newDesign state and clear it after adding
   const addDesign = () => {
     if (newDesign.width <= 0 || newDesign.height <= 0 || newDesign.quantity <= 0) return;
-    updateData('designs', [...appData.designs, { ...newDesign, id: generateUUID(), name: newDesign.name || 'S/N' }]);
+    updateData('designs', [...appData.designs, { ...newDesign, id: generateUUID(), name: newDesign.name || 'S/N' } as DesignItem]);
     setNewDesign({ name: '', width: 0, height: 0, quantity: 1 });
   };
 
@@ -362,6 +392,8 @@ const App: React.FC = () => {
     }).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   }, [appData.orders, appData.clients, orderSearch, statusFilter]);
 
+  if (loading) return <div className="min-h-screen bg-slate-50 flex items-center justify-center"><Loader2Icon className="animate-spin text-indigo-600" size={48}/></div>;
+
   return (
     <div className="min-h-screen bg-slate-50 pb-12">
       <header className="bg-white border-b px-6 py-4 sticky top-0 z-[60] shadow-sm">
@@ -379,7 +411,7 @@ const App: React.FC = () => {
           </nav>
           <div className="flex items-center gap-3">
              {session?.user ? (
-               <button onClick={() => askConfirmation("Cerrar Sesión", "¿Desconectar?", () => supabase?.auth.signOut())} className="flex items-center gap-2 text-[10px] font-black text-emerald-600 uppercase bg-emerald-50 border border-emerald-200 px-5 py-3 rounded-full">
+               <button onClick={() => askConfirmation("Cerrar Sesión", "¿Desconectar taller?", () => supabase?.auth.signOut())} className="flex items-center gap-2 text-[10px] font-black text-emerald-600 uppercase bg-emerald-50 border border-emerald-200 px-5 py-3 rounded-full">
                  <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
                  {session.user.email?.split('@')[0]} <LogOutIcon size={12}/>
                </button>
@@ -435,6 +467,7 @@ const App: React.FC = () => {
               <section className="bg-white rounded-[2rem] p-8 border shadow-sm">
                 <h2 className="text-indigo-600 font-black text-sm uppercase tracking-widest flex items-center gap-3 mb-8"><PlusIcon size={18}/> Agregar Diseño</h2>
                 <div className="space-y-6">
+                   {/* Form fields now correctly using newDesign state */}
                    <input type="text" placeholder="Nombre..." value={newDesign.name} onChange={e => setNewDesign({...newDesign, name: e.target.value})} className="w-full bg-slate-50 p-4 rounded-xl font-bold border-none" />
                    <div className="grid grid-cols-3 gap-3">
                       <input type="number" placeholder="Ancho" value={newDesign.width || ''} onChange={e => setNewDesign({...newDesign, width: Number(e.target.value)})} className="bg-slate-50 p-4 rounded-xl font-bold text-center border-none" />
@@ -453,7 +486,7 @@ const App: React.FC = () => {
                        <RulerIcon size={18} className="text-indigo-400"/> {packResult.totalLength.toFixed(1)} cm
                     </div>
                   </div>
-                  <div className="bg-slate-950 rounded-[2rem] min-h-[400px] overflow-auto flex justify-center p-10 border-[10px] border-slate-900">
+                  <div className="bg-slate-950 rounded-[2rem] min-h-[400px] overflow-auto flex justify-center p-10 border-[10px] border-slate-900 shadow-inner">
                      {packResult.totalLength > 0 ? (
                         <div className="bg-white relative shadow-2xl" style={{ width: `${appData.sheetWidth * 6}px`, height: `${packResult.totalLength * 6}px` }}>
                           {packResult.packed.map(p => (
@@ -462,7 +495,7 @@ const App: React.FC = () => {
                             </div>
                           ))}
                         </div>
-                     ) : <div className="text-slate-800 opacity-20 uppercase font-black py-20">Sin diseños</div>}
+                     ) : <div className="text-slate-800 opacity-20 uppercase font-black py-20">Sin diseños empaquetados</div>}
                   </div>
                </section>
                <section className="bg-white rounded-[2.5rem] p-10 border shadow-sm overflow-x-auto">
@@ -481,16 +514,24 @@ const App: React.FC = () => {
                         return (
                           <tr key={d.id} className="group">
                             <td className="py-6"><div className="font-black text-slate-900 uppercase text-xs">{d.name}</div><div className="text-[10px] font-bold text-slate-400">{d.width}x{d.height} CM • QTY: {d.quantity}</div></td>
-                            <td className="text-right font-black text-rose-500 text-sm">${res.unitProductionCost.toFixed(0)}</td>
+                            <td className="text-right font-black text-rose-500 text-sm">${res.totalProductionCost.toFixed(0)}</td>
                             <td className="text-right font-black text-slate-900 text-sm">${res.unitClientPrice.toFixed(0)}</td>
                             <td className="text-right py-6 px-6 font-black text-emerald-600 text-lg">
                                ${res.totalClientPrice.toFixed(0)}
-                               <button onClick={() => updateData('designs', appData.designs.filter(i => i.id !== d.id))} className="ml-4 text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100"><TrashIcon size={16}/></button>
+                               <button onClick={() => updateData('designs', appData.designs.filter(i => i.id !== d.id))} className="ml-4 text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-all"><TrashIcon size={16}/></button>
                             </td>
                           </tr>
                         );
                       })}
                     </tbody>
+                    <tfoot className="bg-slate-50">
+                        <tr className="border-t-2 border-slate-200">
+                            <td className="py-6 px-4 font-black text-slate-400 uppercase text-[10px]">Totales ({tableTotals.qty} items)</td>
+                            <td className="text-right font-black text-rose-600 text-lg">${tableTotals.prod.toFixed(0)}</td>
+                            <td></td>
+                            <td className="text-right py-6 px-6 font-black text-emerald-700 text-2xl">${tableTotals.client.toFixed(0)}</td>
+                        </tr>
+                    </tfoot>
                   </table>
                </section>
             </div>
@@ -530,16 +571,18 @@ const App: React.FC = () => {
                            </div>
                         </div>
                         <div className="flex items-center gap-8 w-full md:w-auto justify-end">
-                           <div className="text-right flex flex-col items-end">
-                             <div className="flex gap-4 items-center">
-                               <div className="text-right"><div className="text-[9px] font-black text-emerald-400 uppercase">Seña</div><div className="font-black text-emerald-600 text-sm">$ {o.deposit.toLocaleString()}</div></div>
-                               <div className="text-right"><div className="text-[9px] font-black text-rose-300 uppercase">Restante</div><div className="font-black text-rose-500 text-lg">$ {o.balance.toLocaleString()}</div></div>
+                           <div className="text-right flex flex-col items-end min-w-[200px]">
+                             <div className="text-[9px] font-black text-slate-400 uppercase mb-1">Precio Total</div>
+                             <div className="font-black text-slate-900 text-sm mb-2">$ {o.total_price.toLocaleString()}</div>
+                             <div className="flex gap-4 items-center border-t border-slate-100 pt-2">
+                               <div className="text-right"><div className="text-[9px] font-black text-emerald-400 uppercase">Seña</div><div className="font-black text-emerald-600 text-xs">$ {o.deposit.toLocaleString()}</div></div>
+                               <div className="text-right"><div className="text-[9px] font-black text-rose-300 uppercase">Restante</div><div className="font-black text-rose-500 text-sm">$ {o.balance.toLocaleString()}</div></div>
                              </div>
                            </div>
                            <div className="flex gap-2">
-                              <button onClick={() => setShowSummary(o)} className="p-3 bg-slate-50 text-slate-400 rounded-xl hover:bg-indigo-50"><Share2Icon size={18}/></button>
-                              <button onClick={() => { setEditingOrder(o); setOrderForm(o); setIsOrderModalOpen(true); }} className="p-3 bg-slate-50 text-slate-400 rounded-xl hover:bg-indigo-50"><Edit3Icon size={18}/></button>
-                              <button onClick={() => askConfirmation("Borrar", `¿Eliminar pedido #${o.order_number}?`, () => deleteOrder(o.id))} className="p-3 text-slate-200 hover:text-rose-500"><TrashIcon size={18}/></button>
+                              <button onClick={() => setShowSummary(o)} className="p-3 bg-slate-50 text-slate-400 rounded-xl hover:bg-indigo-50 transition-all"><Share2Icon size={18}/></button>
+                              <button onClick={() => { setEditingOrder(o); setOrderForm(o); setIsOrderModalOpen(true); }} className="p-3 bg-slate-50 text-slate-400 rounded-xl hover:bg-indigo-50 transition-all"><Edit3Icon size={18}/></button>
+                              <button onClick={() => askConfirmation("Borrar", `¿Eliminar pedido #${o.order_number}?`, () => deleteOrder(o.id))} className="p-3 text-slate-200 hover:text-rose-500 transition-all"><TrashIcon size={18}/></button>
                            </div>
                         </div>
                      </div>
@@ -574,8 +617,8 @@ const App: React.FC = () => {
                             </td>
                             <td className="px-8 py-6 font-black text-slate-600 text-xs">{c.phone}</td>
                             <td className="px-8 py-6 text-right opacity-0 group-hover:opacity-100 transition-all">
-                               <button onClick={() => { setClientForm(c); setIsClientModalOpen(true); }} className="p-3 text-indigo-600"><Edit3Icon size={18}/></button>
-                               <button onClick={() => askConfirmation("Borrar", `¿Eliminar a ${c.name}?`, () => deleteClient(c.id))} className="p-3 text-rose-500"><TrashIcon size={18}/></button>
+                               <button onClick={() => { setClientForm(c); setIsClientModalOpen(true); }} className="p-3 text-indigo-600 hover:scale-110"><Edit3Icon size={18}/></button>
+                               <button onClick={() => askConfirmation("Borrar", `¿Eliminar a ${c.name}?`, () => deleteClient(c.id))} className="p-3 text-rose-500 hover:scale-110"><TrashIcon size={18}/></button>
                             </td>
                          </tr>
                        ))}
@@ -590,14 +633,14 @@ const App: React.FC = () => {
               <section className="bg-white rounded-[2rem] p-8 border shadow-sm">
                  <div className="flex items-center justify-between mb-8">
                     <h2 className="text-slate-900 font-black text-[10px] uppercase tracking-widest flex items-center gap-2"><TagIcon size={16}/> Categorías</h2>
-                    <button onClick={() => updateData('categories', [...appData.categories, { id: generateUUID(), name: 'NUEVA', pricePerUnit: 0 }])} className="p-2 bg-indigo-50 text-indigo-600 rounded-lg"><PlusIcon size={16}/></button>
+                    <button onClick={() => updateData('categories', [...appData.categories, { id: generateUUID(), name: 'NUEVA', pricePerUnit: 0 }])} className="p-2 bg-indigo-50 text-indigo-600 rounded-lg transition-all hover:bg-indigo-100"><PlusIcon size={16}/></button>
                  </div>
                  <div className="space-y-4">
                     {appData.categories.map((cat, idx) => (
                       <div key={cat.id} className="flex items-center gap-3 bg-slate-50 p-4 rounded-xl border group">
                          <input type="text" value={cat.name} onChange={e => { const nc = [...appData.categories]; nc[idx].name = e.target.value; updateData('categories', nc); }} className="flex-1 bg-transparent font-black text-[10px] uppercase outline-none" />
                          <div className="font-black text-indigo-600 text-xs">$ <input type="number" value={cat.pricePerUnit} onChange={e => { const nc = [...appData.categories]; nc[idx].pricePerUnit = Number(e.target.value); updateData('categories', nc); }} className="w-16 bg-transparent text-right outline-none" /></div>
-                         <button onClick={() => updateData('categories', appData.categories.filter(c => c.id !== cat.id))} className="text-slate-200 hover:text-rose-500 opacity-0 group-hover:opacity-100"><TrashIcon size={14}/></button>
+                         <button onClick={() => updateData('categories', appData.categories.filter(c => c.id !== cat.id))} className="text-slate-200 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-all"><TrashIcon size={14}/></button>
                       </div>
                     ))}
                  </div>
@@ -605,7 +648,7 @@ const App: React.FC = () => {
               <section className="bg-white rounded-[2rem] p-8 border shadow-sm">
                  <div className="flex items-center justify-between mb-8">
                     <h2 className="text-slate-900 font-black text-[10px] uppercase tracking-widest flex items-center gap-2"><LayersIcon size={16}/> Tarifas</h2>
-                    <button onClick={() => updateData('costTiers', [...appData.costTiers, { id: generateUUID(), minLargo: 0, maxLargo: 0, precioPorCm: 0 }])} className="p-2 bg-indigo-50 text-indigo-600 rounded-lg"><PlusIcon size={16}/></button>
+                    <button onClick={() => updateData('costTiers', [...appData.costTiers, { id: generateUUID(), minLargo: 0, maxLargo: 0, precioPorCm: 0 }])} className="p-2 bg-indigo-50 text-indigo-600 rounded-lg transition-all hover:bg-indigo-100"><PlusIcon size={16}/></button>
                  </div>
                  <div className="space-y-4">
                     {appData.costTiers.map((tier, idx) => (
@@ -614,7 +657,7 @@ const App: React.FC = () => {
                          <span className="text-slate-300">→</span>
                          <input type="number" value={tier.maxLargo} onChange={e => { const nt = [...appData.costTiers]; nt[idx].maxLargo = Number(e.target.value); updateData('costTiers', nt); }} className="w-10 bg-white rounded p-1 text-[9px] font-black text-center" />
                          <div className="flex-1 text-right font-black text-indigo-600 text-xs">$ <input type="number" value={tier.precioPorCm} onChange={e => { const nt = [...appData.costTiers]; nt[idx].precioPorCm = Number(e.target.value); updateData('costTiers', nt); }} className="w-14 bg-transparent text-right outline-none" /></div>
-                         <button onClick={() => updateData('costTiers', appData.costTiers.filter(t => t.id !== tier.id))} className="text-slate-200 hover:text-rose-500 opacity-0 group-hover:opacity-100"><TrashIcon size={14}/></button>
+                         <button onClick={() => updateData('costTiers', appData.costTiers.filter(t => t.id !== tier.id))} className="text-slate-200 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-all"><TrashIcon size={14}/></button>
                       </div>
                     ))}
                  </div>
@@ -622,7 +665,7 @@ const App: React.FC = () => {
               <section className="bg-white rounded-[2rem] p-8 border shadow-sm">
                  <div className="flex items-center justify-between mb-8">
                     <h2 className="text-slate-900 font-black text-[10px] uppercase tracking-widest flex items-center gap-2"><PercentIcon size={16}/> Descuentos</h2>
-                    <button onClick={() => updateData('quantityDiscounts', [...appData.quantityDiscounts, { id: generateUUID(), minQty: 0, maxQty: 0, discountPercent: 0 }])} className="p-2 bg-indigo-50 text-indigo-600 rounded-lg"><PlusIcon size={16}/></button>
+                    <button onClick={() => updateData('quantityDiscounts', [...appData.quantityDiscounts, { id: generateUUID(), minQty: 0, maxQty: 0, discountPercent: 0 }])} className="p-2 bg-indigo-50 text-indigo-600 rounded-lg transition-all hover:bg-indigo-100"><PlusIcon size={16}/></button>
                  </div>
                  <div className="space-y-4">
                     {appData.quantityDiscounts.map((disc, idx) => (
@@ -631,7 +674,7 @@ const App: React.FC = () => {
                          <span className="text-slate-300">→</span>
                          <input type="number" value={disc.maxQty} onChange={e => { const nd = [...appData.quantityDiscounts]; nd[idx].maxQty = Number(e.target.value); updateData('quantityDiscounts', nd); }} className="w-10 bg-white rounded p-1 text-[9px] font-black text-center" />
                          <div className="flex-1 text-right font-black text-emerald-600 text-xs"><input type="number" value={disc.discountPercent} onChange={e => { const nd = [...appData.quantityDiscounts]; nd[idx].discountPercent = Number(e.target.value); updateData('quantityDiscounts', nd); }} className="w-10 bg-transparent text-right outline-none" />%</div>
-                         <button onClick={() => updateData('quantityDiscounts', appData.quantityDiscounts.filter(d => d.id !== disc.id))} className="text-slate-200 hover:text-rose-500 opacity-0 group-hover:opacity-100"><TrashIcon size={14}/></button>
+                         <button onClick={() => updateData('quantityDiscounts', appData.quantityDiscounts.filter(d => d.id !== disc.id))} className="text-slate-200 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-all"><TrashIcon size={14}/></button>
                       </div>
                     ))}
                  </div>
@@ -649,7 +692,7 @@ const App: React.FC = () => {
               <form onSubmit={handleAuth} className="space-y-5">
                  <input type="email" required value={authEmail} onChange={e => setAuthEmail(e.target.value)} className="w-full bg-slate-50 border p-4 rounded-xl font-bold border-none" placeholder="Email" />
                  <input type="password" required value={authPassword} onChange={e => setAuthPassword(e.target.value)} className="w-full bg-slate-50 border p-4 rounded-xl font-bold border-none" placeholder="Contraseña" />
-                 <button type="submit" disabled={authLoading} className="w-full bg-indigo-600 text-white font-black py-4 rounded-xl uppercase text-[10px] shadow-xl">
+                 <button type="submit" disabled={authLoading} className="w-full bg-indigo-600 text-white font-black py-4 rounded-xl uppercase text-[10px] shadow-xl transition-all hover:bg-indigo-700 active:scale-95">
                     {authLoading ? 'Conectando...' : 'Entrar'}
                  </button>
               </form>
