@@ -165,7 +165,6 @@ const App: React.FC = () => {
       ]);
 
       setAppData(prev => {
-        // Combinar locales con nube: si la nube tiene datos, los usamos, si no, mantenemos locales
         return {
           ...prev,
           sheetWidth: Number(settings?.sheet_width) || prev.sheetWidth,
@@ -178,22 +177,18 @@ const App: React.FC = () => {
     } catch (e) { }
   };
 
-  // Función para subir datos que estaban solo en LocalStorage a Supabase
   const pushLocalDataToCloud = async () => {
     if (!supabase || !session?.user) return;
     setIsMigrating(true);
     try {
-      // 1. Subir Clientes
       if (appData.clients.length > 0) {
         const clientsToUpload = appData.clients.map(c => ({ ...c, user_id: session.user.id }));
         await supabase.from('clients').upsert(clientsToUpload);
       }
-      // 2. Subir Pedidos
       if (appData.orders.length > 0) {
         const ordersToUpload = appData.orders.map(o => ({ ...o, user_id: session.user.id }));
         await supabase.from('orders').upsert(ordersToUpload);
       }
-      // 3. Subir Ajustes
       await supabase.from('settings').upsert({
         user_id: session.user.id,
         sheet_width: appData.sheetWidth,
@@ -201,11 +196,10 @@ const App: React.FC = () => {
         design_spacing: appData.designSpacing,
         updated_at: new Date().toISOString()
       });
-      
-      alert("✅ Sincronización completa. Tus datos ya están en la nube de Supabase.");
+      alert("✅ Sincronización completa. Tus datos ya están en la nube.");
       await fetchCloudData(session.user.id);
     } catch (err) {
-      alert("❌ Error al sincronizar. Revisa tu conexión.");
+      alert("❌ Error al sincronizar.");
     } finally {
       setIsMigrating(false);
     }
@@ -248,7 +242,7 @@ const App: React.FC = () => {
 
       if (signInError) {
         if (signInError.message.toLowerCase().includes("rate limit")) {
-          alert("⏳ Límite de intentos excedido. Por favor, espera 10 minutos.");
+          alert("⏳ Límite de intentos excedido.");
           setAuthLoading(false);
           return;
         }
@@ -260,11 +254,7 @@ const App: React.FC = () => {
           });
 
           if (signUpError) {
-             if (signUpError.message.toLowerCase().includes("rate limit")) {
-                alert("⏳ Límite excedido. Espera unos minutos.");
-             } else {
-                alert(`❌ Error: ${signUpError.message}`);
-             }
+             alert(`❌ Error: ${signUpError.message}`);
           } else {
             alert("✅ ¡Revisa tu email para confirmar la cuenta!");
             setIsAuthModalOpen(false);
@@ -348,30 +338,30 @@ const App: React.FC = () => {
   const handleOpenNewOrder = () => {
     setEditingOrder(null);
     setOrderForm({
-      orderNumber: (appData.orders.length + 1).toString().padStart(4, '0'),
-      clientId: appData.clients[0]?.id || '',
-      categoryId: appData.categories[0]?.id || '1',
+      order_number: (appData.orders.length + 1).toString().padStart(4, '0'),
+      client_id: appData.clients[0]?.id || '',
+      category_id: appData.categories[0]?.id || '1',
       quantity: 1,
       width: 0,
       height: 0,
       deposit: 0,
-      statusId: 'hacer'
+      status_id: 'hacer'
     });
     setIsOrderModalOpen(true);
   };
 
   const saveOrder = async () => {
-    const category = appData.categories.find(c => c.id === orderForm.categoryId);
-    const totalPrice = (category?.pricePerUnit || 0) * (orderForm.quantity || 0);
+    const category = appData.categories.find(c => c.id === orderForm.category_id);
+    const total_price = (category?.pricePerUnit || 0) * (orderForm.quantity || 0);
     const deposit = orderForm.deposit || 0;
-    const balance = totalPrice - deposit;
+    const balance = total_price - deposit;
     
     let updatedOrder: Order;
     if (editingOrder) {
-      updatedOrder = { ...editingOrder, ...orderForm, totalPrice, balance } as Order;
+      updatedOrder = { ...editingOrder, ...orderForm, total_price, balance } as Order;
       updateData('orders', appData.orders.map(o => o.id === editingOrder.id ? updatedOrder : o));
     } else {
-      updatedOrder = { ...orderForm, id: Date.now().toString(), totalPrice, balance, createdAt: Date.now() } as Order;
+      updatedOrder = { ...orderForm, id: Date.now().toString(), total_price, balance, created_at: Date.now() } as Order;
       updateData('orders', [...appData.orders, updatedOrder]);
     }
 
@@ -383,11 +373,11 @@ const App: React.FC = () => {
 
   const filteredOrders = useMemo(() => {
     return appData.orders.filter(o => {
-      const client = appData.clients.find(c => c.id === o.clientId);
-      const matchesText = client?.name.toLowerCase().includes(orderSearch.toLowerCase()) || o.orderNumber.includes(orderSearch);
-      const matchesStatus = orderStatusFilter === 'all' || o.statusId === orderStatusFilter;
+      const client = appData.clients.find(c => c.id === o.client_id);
+      const matchesText = client?.name.toLowerCase().includes(orderSearch.toLowerCase()) || o.order_number.includes(orderSearch);
+      const matchesStatus = orderStatusFilter === 'all' || o.status_id === orderStatusFilter;
       return matchesText && matchesStatus;
-    }).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    }).sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
   }, [appData.orders, appData.clients, orderSearch, orderStatusFilter]);
 
   const [isClientModalOpen, setIsClientModalOpen] = useState(false);
@@ -408,11 +398,18 @@ const App: React.FC = () => {
         updatedClient = { ...clientForm } as Client;
         updateData('clients', appData.clients.map(c => c.id === clientForm.id ? updatedClient : c));
     } else {
-        updatedClient = { ...clientForm, id: Date.now().toString(), createdAt: Date.now() } as Client;
+        updatedClient = { ...clientForm, id: Date.now().toString(), created_at: Date.now() } as Client;
         updateData('clients', [...appData.clients, updatedClient]);
     }
     if (supabase && session?.user) {
-      const { error } = await supabase.from('clients').upsert({ ...updatedClient, user_id: session.user.id });
+      const { error } = await supabase.from('clients').upsert({ 
+        id: updatedClient.id,
+        name: updatedClient.name,
+        phone: updatedClient.phone,
+        address: updatedClient.address,
+        created_at: updatedClient.created_at,
+        user_id: session.user.id 
+      });
       if (error) alert("Error al subir a la nube: " + error.message);
     }
     setClientForm({ name: '', phone: '', address: '' });
@@ -420,10 +417,10 @@ const App: React.FC = () => {
   };
 
   const shareToWA = (order: Order) => {
-    const client = appData.clients.find(c => c.id === order.clientId);
+    const client = appData.clients.find(c => c.id === order.client_id);
     const phone = client?.phone.replace(/\D/g,'') || '';
     const clientName = client?.name || 'Cliente';
-    const text = `*CreaStickers - Ticket #${order.orderNumber}*\n\n*Cliente:* ${clientName}\n*Medida:* ${order.width}x${order.height} cm\n*Cantidad:* ${order.quantity}\n*Total:* $${order.totalPrice}\n*Seña:* $${order.deposit}\n*Restante:* $${order.balance}`;
+    const text = `*CreaStickers - Ticket #${order.order_number}*\n\n*Cliente:* ${clientName}\n*Medida:* ${order.width}x${order.height} cm\n*Cantidad:* ${order.quantity}\n*Total:* $${order.total_price}\n*Seña:* $${order.deposit}\n*Restante:* $${order.balance}`;
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank');
   };
 
@@ -433,12 +430,10 @@ const App: React.FC = () => {
     <div className="min-h-screen bg-slate-50 font-sans text-slate-700 pb-12">
       <header className="bg-white/95 backdrop-blur-md border-b border-slate-200 px-6 py-4 sticky top-0 z-[60] shadow-sm">
         <div className="max-w-7xl mx-auto flex flex-col lg:flex-row items-center justify-between gap-6">
-          
           <div className="flex items-center gap-3">
             <div className="bg-indigo-600 p-2.5 rounded-xl text-white shadow-lg shadow-indigo-200"><CalculatorIcon size={24}/></div>
             <h1 className="text-2xl font-black text-slate-900 tracking-tighter">Crea<span className="text-indigo-600">Stickers</span></h1>
           </div>
-          
           <nav className="flex items-center justify-center bg-slate-100 p-1 rounded-2xl border border-slate-200 shadow-inner overflow-x-auto">
             <button onClick={() => setActiveTab('dash')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === 'dash' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Inicio</button>
             <button onClick={() => setActiveTab('presupuestar')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === 'presupuestar' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Presu</button>
@@ -446,80 +441,50 @@ const App: React.FC = () => {
             <button onClick={() => setActiveTab('clientes')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === 'clientes' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Clientes</button>
             <button onClick={() => setActiveTab('config')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === 'config' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Ajustes</button>
           </nav>
-
           <div className="flex items-center gap-3 min-w-[200px] justify-end">
              {session?.user ? (
-               <button 
-                 onClick={() => askConfirmation("Cerrar Sesión", "¿Quieres desconectar el taller de la nube?", () => supabase?.auth.signOut())} 
-                 className="flex items-center gap-2 text-[10px] font-black text-emerald-600 uppercase bg-emerald-50 border border-emerald-200 px-5 py-3 rounded-full hover:bg-rose-50 hover:text-rose-600 transition-all shadow-sm"
-               >
+               <button onClick={() => askConfirmation("Cerrar Sesión", "¿Quieres desconectar el taller?", () => supabase?.auth.signOut())} className="flex items-center gap-2 text-[10px] font-black text-emerald-600 uppercase bg-emerald-50 border border-emerald-200 px-5 py-3 rounded-full hover:bg-rose-50 hover:text-rose-600 transition-all shadow-sm">
                  <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-                 {session.user.email?.split('@')[0] || 'Conectado'}
-                 <LogOutIcon size={12}/>
+                 {session.user.email?.split('@')[0] || 'Conectado'} <LogOutIcon size={12}/>
                </button>
              ) : (
-               <div className="flex items-center gap-2">
-                 {!supabase ? (
-                   <button 
-                     onClick={() => alert("🚨 CONFIGURACIÓN REQUERIDA: Debes agregar VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY en tu panel de Hosting.")}
-                     className="flex items-center gap-2 text-[10px] font-black text-white uppercase bg-rose-500 px-6 py-3 rounded-full shadow-lg hover:bg-rose-600 transition-all border-b-4 border-rose-800"
-                   >
-                     <ShieldAlertIcon size={14}/> Error de Nube
-                   </button>
-                 ) : (
-                   <button 
-                     onClick={() => setIsAuthModalOpen(true)} 
-                     className="flex items-center gap-3 text-[11px] font-black text-white uppercase bg-indigo-600 border-2 border-indigo-400 px-8 py-3 rounded-full hover:bg-indigo-700 hover:scale-105 transition-all shadow-xl"
-                   >
-                     <CloudIcon size={16}/> Sincronizar Nube
-                   </button>
-                 )}
-               </div>
+               <button onClick={() => setIsAuthModalOpen(true)} className="flex items-center gap-3 text-[11px] font-black text-white uppercase bg-indigo-600 border-2 border-indigo-400 px-8 py-3 rounded-full hover:bg-indigo-700 hover:scale-105 transition-all shadow-xl">
+                 <CloudIcon size={16}/> Sincronizar Nube
+               </button>
              )}
           </div>
         </div>
       </header>
 
       {showWelcomeMsg && (
-        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[100] bg-emerald-600 text-white px-8 py-4 rounded-full shadow-2xl font-black text-sm uppercase flex items-center gap-4 animate-in slide-in-from-top-10 duration-500">
-          <PartyPopperIcon size={24}/>
-          ¡Cuenta confirmada! Ya estás conectado a la nube.
+        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[100] bg-emerald-600 text-white px-8 py-4 rounded-full shadow-2xl font-black text-sm uppercase flex items-center gap-4">
+          <PartyPopperIcon size={24}/> ¡Cuenta confirmada! Ya estás conectado.
           <button onClick={() => setShowWelcomeMsg(false)} className="bg-white/20 p-1 rounded-full"><XIcon size={16}/></button>
         </div>
       )}
 
       <main className="max-w-7xl mx-auto p-6 md:p-10">
         {activeTab === 'dash' && (
-           <div className="space-y-10 animate-in fade-in duration-500">
-              
-              {/* ALERTA DE MIGRACIÓN */}
+           <div className="space-y-10">
               {session?.user && (appData.clients.length > 0 || appData.orders.length > 0) && (
-                <div className="bg-indigo-600 rounded-[3rem] p-10 flex flex-col md:flex-row items-center justify-between gap-8 text-white shadow-2xl shadow-indigo-200 border-2 border-indigo-400">
+                <div className="bg-indigo-600 rounded-[3rem] p-10 flex flex-col md:flex-row items-center justify-between gap-8 text-white shadow-2xl border-2 border-indigo-400">
                    <div className="flex items-center gap-6">
                       <div className="w-16 h-16 bg-white/20 rounded-3xl flex items-center justify-center backdrop-blur-md"><CloudUploadIcon size={32}/></div>
                       <div>
-                         <h3 className="text-xl font-black uppercase tracking-tighter leading-none mb-2">Migración Pendiente</h3>
-                         <p className="text-indigo-100 text-xs font-bold uppercase tracking-widest opacity-80 leading-relaxed max-w-sm">
-                            Detectamos datos que solo están en tu navegador. Haz clic para subirlos a tu cuenta de Supabase.
-                         </p>
+                         <h3 className="text-xl font-black uppercase tracking-tighter leading-none mb-2">Sincronización Pendiente</h3>
+                         <p className="text-indigo-100 text-xs font-bold uppercase tracking-widest opacity-80 leading-relaxed max-w-sm">Tienes datos locales. Súbelos a tu cuenta segura de Supabase.</p>
                       </div>
                    </div>
-                   <button 
-                    disabled={isMigrating}
-                    onClick={pushLocalDataToCloud}
-                    className="bg-white text-indigo-600 px-10 py-5 rounded-2xl font-black text-xs uppercase tracking-[0.2em] shadow-xl hover:scale-105 transition-all active:scale-95 flex items-center gap-3"
-                   >
-                     {isMigrating ? <Loader2Icon className="animate-spin" size={18}/> : <RefreshCwIcon size={18}/>}
-                     {isMigrating ? 'Sincronizando...' : 'Subir a la Nube'}
+                   <button disabled={isMigrating} onClick={pushLocalDataToCloud} className="bg-white text-indigo-600 px-10 py-5 rounded-2xl font-black text-xs uppercase tracking-[0.2em] shadow-xl hover:scale-105 transition-all">
+                     {isMigrating ? <Loader2Icon className="animate-spin" size={18}/> : 'Subir a la Nube'}
                    </button>
                 </div>
               )}
-
               <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
                  {appData.statuses.map(s => (
-                   <div key={s.id} className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm flex flex-col items-center hover:translate-y-[-4px] transition-transform">
-                      <div className={`w-4 h-4 rounded-full ${s.color} mb-4 shadow-sm`}></div>
-                      <div className="text-5xl font-black text-slate-900 mb-2 leading-none">{appData.orders.filter(o => o.statusId === s.id).length}</div>
+                   <div key={s.id} className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm flex flex-col items-center">
+                      <div className={`w-4 h-4 rounded-full ${s.color} mb-4`}></div>
+                      <div className="text-5xl font-black text-slate-900 mb-2">{appData.orders.filter(o => o.status_id === s.id).length}</div>
                       <div className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">{s.name}</div>
                    </div>
                  ))}
@@ -527,10 +492,8 @@ const App: React.FC = () => {
            </div>
         )}
 
-        {/* ... (resto del código de Tabs se mantiene igual, solo añado pequeños badges de nube en tablas) ... */}
-        
         {activeTab === 'presupuestar' && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 animate-in fade-in duration-500">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
             <div className="lg:col-span-4 space-y-8">
               <section className="bg-white rounded-[2.5rem] p-10 border border-slate-200 shadow-sm">
                 <h2 className="text-slate-900 font-black text-sm uppercase tracking-widest flex items-center gap-3 mb-8"><Settings2Icon className="text-indigo-500" size={18}/> Configuración</h2>
@@ -545,13 +508,13 @@ const App: React.FC = () => {
               <section className="bg-white rounded-[2.5rem] p-10 border border-slate-200 shadow-sm">
                 <h2 className="text-indigo-600 font-black text-sm uppercase tracking-widest flex items-center gap-3 mb-8"><PlusIcon size={18}/> Agregar Diseño</h2>
                 <div className="space-y-6">
-                   <input type="text" placeholder="Nombre (opcional)..." value={newDesign.name} onChange={e => setNewDesign({...newDesign, name: e.target.value})} className="w-full bg-slate-50 rounded-2xl p-4 font-bold" />
+                   <input type="text" placeholder="Nombre..." value={newDesign.name} onChange={e => setNewDesign({...newDesign, name: e.target.value})} className="w-full bg-slate-50 rounded-2xl p-4 font-bold" />
                    <div className="grid grid-cols-3 gap-3">
-                      <input type="number" placeholder="Ancho" value={newDesign.width || ''} onChange={e => setNewDesign({...newDesign, width: Number(e.target.value)})} className="bg-slate-50 rounded-2xl p-4 font-bold text-center" />
-                      <input type="number" placeholder="Alto" value={newDesign.height || ''} onChange={e => setNewDesign({...newDesign, height: Number(e.target.value)})} className="bg-slate-50 rounded-2xl p-4 font-bold text-center" />
-                      <input type="number" placeholder="Cant." value={newDesign.quantity || ''} onChange={e => setNewDesign({...newDesign, quantity: Number(e.target.value)})} className="bg-slate-50 rounded-2xl p-4 font-bold text-center" />
+                      <input type="number" placeholder="W" value={newDesign.width || ''} onChange={e => setNewDesign({...newDesign, width: Number(e.target.value)})} className="bg-slate-50 rounded-2xl p-4 font-bold text-center" />
+                      <input type="number" placeholder="H" value={newDesign.height || ''} onChange={e => setNewDesign({...newDesign, height: Number(e.target.value)})} className="bg-slate-50 rounded-2xl p-4 font-bold text-center" />
+                      <input type="number" placeholder="Qty" value={newDesign.quantity || ''} onChange={e => setNewDesign({...newDesign, quantity: Number(e.target.value)})} className="bg-slate-50 rounded-2xl p-4 font-bold text-center" />
                    </div>
-                   <button onClick={addDesign} className="w-full bg-indigo-600 text-white font-black py-5 rounded-2xl uppercase text-[11px] tracking-widest shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all active:scale-95">Optimizar Largo</button>
+                   <button onClick={addDesign} className="w-full bg-indigo-600 text-white font-black py-5 rounded-2xl uppercase text-[11px] shadow-xl hover:bg-indigo-700">Optimizar</button>
                 </div>
               </section>
             </div>
@@ -559,72 +522,57 @@ const App: React.FC = () => {
             <div className="lg:col-span-8 space-y-10">
                <section className="bg-white rounded-[3.5rem] p-12 border border-slate-200 shadow-sm">
                   <div className="flex items-center justify-between mb-10">
-                    <h2 className="font-black text-2xl text-slate-900 tracking-tighter flex items-center gap-4"><LayoutIcon className="text-indigo-500" size={24}/> Distribución</h2>
-                    <div className="flex flex-col items-end">
-                       <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Largo Total Optimizado</div>
-                       <div className="bg-slate-900 text-white px-8 py-3 rounded-2xl font-black text-lg uppercase tracking-widest shadow-lg shadow-indigo-900/20 flex items-center gap-3">
-                         <RulerIcon size={20} className="text-indigo-400"/>
-                         {packingResult.totalLength.toFixed(1)} cm
-                       </div>
+                    <h2 className="font-black text-2xl text-slate-900 flex items-center gap-4"><LayoutIcon className="text-indigo-500" size={24}/> Distribución</h2>
+                    <div className="bg-slate-900 text-white px-8 py-3 rounded-2xl font-black text-lg uppercase flex items-center gap-3">
+                         <RulerIcon size={20} className="text-indigo-400"/> {packingResult.totalLength.toFixed(1)} cm
                     </div>
                   </div>
-                  <div className="bg-slate-950 rounded-[3rem] min-h-[450px] overflow-auto flex justify-center p-14 custom-scrollbar border-[12px] border-slate-900 shadow-2xl">
+                  <div className="bg-slate-950 rounded-[3rem] min-h-[450px] overflow-auto flex justify-center p-14 border-[12px] border-slate-900 shadow-2xl">
                      {packingResult.totalLength > 0 ? (
                         <div className="bg-white relative shadow-2xl" style={{ width: `${appData.sheetWidth * PREVIEW_SCALE}px`, height: `${packingResult.totalLength * PREVIEW_SCALE}px` }}>
                           {packingResult.packed.map(p => {
                             const color = getColorForDesign(p.originalId);
                             return (
-                              <div key={p.id} className={`absolute border ${color.bg} ${color.border} ${color.text} flex items-center justify-center text-[7px] font-black overflow-hidden group transition-all`} style={{ left: `${p.x * PREVIEW_SCALE}px`, top: `${p.y * PREVIEW_SCALE}px`, width: `${p.width * PREVIEW_SCALE}px`, height: `${p.height * PREVIEW_SCALE}px` }}>
+                              <div key={p.id} className={`absolute border ${color.bg} ${color.border} ${color.text} flex items-center justify-center text-[7px] font-black overflow-hidden`} style={{ left: `${p.x * PREVIEW_SCALE}px`, top: `${p.y * PREVIEW_SCALE}px`, width: `${p.width * PREVIEW_SCALE}px`, height: `${p.height * PREVIEW_SCALE}px` }}>
                                  <span className="block text-center">{p.width}x{p.height}</span>
                               </div>
                             )
                           })}
                         </div>
-                     ) : <div className="text-slate-700 opacity-20 uppercase font-black tracking-[0.3em] flex flex-col items-center justify-center py-32"><LayoutIcon size={64} className="mb-6"/> Sin diseños</div>}
+                     ) : <div className="text-slate-700 opacity-20 uppercase font-black py-32">Sin diseños</div>}
                   </div>
                </section>
 
                <section className="bg-white rounded-[3.5rem] p-12 border border-slate-200 shadow-sm">
-                  <div className="overflow-x-auto custom-scrollbar">
+                  <div className="overflow-x-auto">
                     <table className="w-full text-left border-separate border-spacing-y-5">
                       <thead>
                         <tr className="text-slate-400 text-[11px] font-black uppercase tracking-widest">
                           <th className="px-6 pb-2">Nombre</th>
-                          <th className="text-right pb-2">Costo Unit.</th>
-                          <th className="text-right pb-2">Precio Unit.</th>
-                          <th className="text-right pb-2">Costo Total</th>
-                          <th className="px-6 text-right pb-2">Venta Total</th>
+                          <th className="text-right pb-2">Unit.</th>
+                          <th className="text-right pb-2">Venta</th>
+                          <th className="px-6 text-right pb-2">Total</th>
                         </tr>
                       </thead>
                       <tbody>
                         {appData.designs.map(d => {
                           const res = calculateDetails(d);
                           return (
-                            <tr key={d.id} className="bg-slate-50 rounded-3xl group hover:bg-indigo-50/30 transition-all">
+                            <tr key={d.id} className="bg-slate-50 rounded-3xl group">
                               <td className="py-6 px-8 rounded-l-[2rem]">
-                                 <div className="font-black text-slate-900 uppercase text-[12px] mb-1">{d.name || 'Sin nombre'}</div>
-                                 <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{d.width}x{d.height} CM • QTY: {d.quantity}</div>
+                                 <div className="font-black text-slate-900 uppercase text-[12px] mb-1">{d.name || 'S/N'}</div>
+                                 <div className="text-[10px] font-bold text-slate-400 uppercase">{d.width}x{d.height} CM • QTY: {d.quantity}</div>
                               </td>
                               <td className="text-right font-black text-rose-500 text-sm whitespace-nowrap">${res.unitProductionCost.toFixed(0)}</td>
                               <td className="text-right font-black text-slate-900 text-sm whitespace-nowrap">${res.unitClientPrice.toFixed(0)}</td>
-                              <td className="text-right font-bold text-slate-400 text-sm whitespace-nowrap">${res.totalProductionCost.toFixed(0)}</td>
                               <td className="py-6 px-8 text-right rounded-r-[2rem] font-black text-emerald-600 text-xl whitespace-nowrap">
                                  ${res.totalClientPrice.toFixed(0)}
-                                 <button onClick={() => askConfirmation("Borrar Diseño", "¿Seguro que deseas quitar este diseño?", () => updateData('designs', appData.designs.filter(i => i.id !== d.id)))} className="ml-5 text-slate-300 hover:text-rose-500 transition-all opacity-0 group-hover:opacity-100"><TrashIcon size={18}/></button>
+                                 <button onClick={() => updateData('designs', appData.designs.filter(i => i.id !== d.id))} className="ml-5 text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-all"><TrashIcon size={18}/></button>
                               </td>
                             </tr>
                           )
                         })}
                       </tbody>
-                      <tfoot>
-                         <tr className="border-t-2 border-slate-100">
-                            <td className="px-8 py-8 font-black text-slate-400 uppercase tracking-widest text-[11px]">Totales ({totalsPresupuesto.totalQty} u.)</td>
-                            <td className="text-right px-4 font-black text-rose-500 text-sm whitespace-nowrap">${totalsPresupuesto.unitCostoSum.toFixed(0)}</td>
-                            <td className="text-right px-4 font-black text-slate-900 text-sm whitespace-nowrap">${totalsPresupuesto.unitVentaSum.toFixed(0)}</td>
-                            <td className="text-right px-4 font-black text-rose-500 text-lg whitespace-nowrap">${totalsPresupuesto.costoTotal.toLocaleString()}</td>
-                            <td className="text-right px-8 font-black text-emerald-600 text-3xl whitespace-nowrap">${totalsPresupuesto.ventaTotal.toLocaleString()}</td>
-                         </tr>
-                      </tfoot>
                     </table>
                   </div>
                </section>
@@ -633,54 +581,48 @@ const App: React.FC = () => {
         )}
 
         {activeTab === 'pedidos' && (
-           <div className="space-y-10 animate-in fade-in duration-500">
+           <div className="space-y-10">
               <div className="flex flex-col lg:flex-row items-center justify-between gap-8 bg-white p-8 rounded-[3rem] shadow-sm border border-slate-200">
                  <div className="relative flex-1 w-full">
                     <SearchIcon className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300" size={20}/>
-                    <input type="text" placeholder="Buscar pedido o cliente..." value={orderSearch} onChange={e => setOrderSearch(e.target.value)} className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-5 pl-16 pr-8 outline-none font-bold" />
+                    <input type="text" placeholder="Buscar pedido..." value={orderSearch} onChange={e => setOrderSearch(e.target.value)} className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-5 pl-16 outline-none font-bold" />
                  </div>
-                 <div className="flex items-center gap-3 w-full lg:w-auto overflow-x-auto pb-2">
-                    <button onClick={() => setOrderStatusFilter('all')} className={`px-6 py-3.5 rounded-xl text-[11px] font-black uppercase tracking-widest border transition-all ${orderStatusFilter === 'all' ? 'bg-slate-900 text-white shadow-lg' : 'bg-white text-slate-400 border-slate-200 hover:border-slate-400'}`}>Todos</button>
-                    {appData.statuses.map(s => <button key={s.id} onClick={() => setOrderStatusFilter(s.id)} className={`px-6 py-3.5 rounded-xl text-[11px] font-black uppercase tracking-widest border transition-all ${orderStatusFilter === s.id ? 'bg-indigo-600 text-white shadow-lg' : 'bg-white text-slate-400 border-slate-200 hover:border-slate-400'}`}>{s.name}</button>)}
-                    <button onClick={handleOpenNewOrder} className="ml-6 bg-indigo-600 text-white px-10 py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-xl flex items-center gap-3 hover:bg-indigo-700 active:scale-95 transition-all"><PlusIcon size={16}/> Cargar Pedido</button>
+                 <div className="flex items-center gap-3 w-full lg:w-auto overflow-x-auto">
+                    <button onClick={() => setOrderStatusFilter('all')} className={`px-6 py-3 rounded-xl text-[11px] font-black uppercase transition-all ${orderStatusFilter === 'all' ? 'bg-slate-900 text-white' : 'bg-white text-slate-400 border border-slate-200'}`}>Todos</button>
+                    {appData.statuses.map(s => <button key={s.id} onClick={() => setOrderStatusFilter(s.id)} className={`px-6 py-3 rounded-xl text-[11px] font-black uppercase transition-all ${orderStatusFilter === s.id ? 'bg-indigo-600 text-white' : 'bg-white text-slate-400 border border-slate-200'}`}>{s.name}</button>)}
+                    <button onClick={handleOpenNewOrder} className="ml-6 bg-indigo-600 text-white px-10 py-4 rounded-2xl font-black text-[11px] uppercase shadow-xl flex items-center gap-3"><PlusIcon size={16}/> Cargar Pedido</button>
                  </div>
               </div>
               <div className="grid gap-5">
                  {filteredOrders.map(o => {
-                   const client = appData.clients.find(c => c.id === o.clientId);
-                   const status = appData.statuses.find(s => s.id === o.statusId);
+                   const client = appData.clients.find(c => c.id === o.client_id);
+                   const status = appData.statuses.find(s => s.id === o.status_id);
                    const isLocal = !(o as any).user_id;
                    return (
-                     <div key={o.id} className="bg-white rounded-[2.5rem] p-8 border border-slate-200 shadow-sm flex flex-col md:flex-row items-center gap-10 group hover:border-indigo-300 transition-all hover:translate-x-1">
+                     <div key={o.id} className="bg-white rounded-[2.5rem] p-8 border border-slate-200 shadow-sm flex flex-col md:flex-row items-center gap-10 group transition-all">
                         <div className="flex-1 flex items-center gap-6 w-full">
                            <div className={`w-16 h-16 rounded-3xl ${status?.color || 'bg-slate-400'} text-white flex flex-col items-center justify-center font-black text-[10px] shadow-xl`}>
-                              <span className="opacity-60 text-[8px] uppercase">ID</span>
-                              <span className="text-sm">#{o.orderNumber}</span>
+                              <span className="opacity-60 uppercase">ID</span> <span className="text-sm">#{o.order_number}</span>
                            </div>
                            <div>
                               <div className="font-black text-slate-900 uppercase text-[15px] mb-1 leading-none flex items-center gap-3">
                                 {client?.name || 'Cliente borrado'}
-                                {/* Fix: Remove title prop from CloudOffIcon which is not supported by the component and wrap it in a span to preserve the tooltip functionality. */}
-                                {isLocal && session?.user && (
-                                  <span title="Solo local">
-                                    <CloudOffIcon size={14} className="text-rose-400" />
-                                  </span>
-                                )}
+                                {isLocal && session?.user && <span title="Solo local"><CloudOffIcon size={14} className="text-rose-400" /></span>}
                               </div>
-                              <div className="text-[11px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                              <div className="text-[11px] font-bold text-slate-400 uppercase flex items-center gap-2">
                                 <span className={`px-2 py-0.5 rounded-full text-white text-[9px] ${status?.color || 'bg-slate-400'}`}>{status?.name || 'S/E'}</span>
                                 {o.width}x{o.height} cm • {o.quantity} u.
                               </div>
                            </div>
                         </div>
                         <div className="flex flex-wrap items-center justify-end gap-10 w-full md:w-auto text-right">
-                           <div className="min-w-[80px] text-right"><div className="text-[10px] font-black text-slate-300 uppercase mb-1">Total</div><div className="font-black text-slate-900 text-lg">$ {o.totalPrice.toLocaleString()}</div></div>
+                           <div className="min-w-[80px]"><div className="text-[10px] font-black text-slate-300 uppercase mb-1">Total</div><div className="font-black text-slate-900 text-lg">$ {o.total_price.toLocaleString()}</div></div>
                            <div className="min-w-[80px] text-right"><div className="text-[10px] font-black text-emerald-300 uppercase mb-1">Seña</div><div className="font-black text-emerald-600">$ {o.deposit.toLocaleString()}</div></div>
                            <div className="min-w-[80px] text-right"><div className="text-[10px] font-black text-rose-300 uppercase mb-1">Restante</div><div className="font-black text-rose-500 text-xl font-black">$ {o.balance.toLocaleString()}</div></div>
                            <div className="flex gap-3">
-                              <button onClick={() => setShowSummary(o)} className="p-4 bg-slate-50 text-slate-400 rounded-2xl hover:bg-indigo-50 hover:text-indigo-600 transition-all"><Share2Icon size={20}/></button>
-                              <button onClick={() => { setEditingOrder(o); setOrderForm(o); setIsOrderModalOpen(true); }} className="p-4 bg-slate-50 text-slate-400 rounded-2xl hover:bg-indigo-50 hover:text-indigo-600 transition-all"><Edit3Icon size={20}/></button>
-                              <button onClick={() => askConfirmation("Borrar Pedido", `¿Eliminar pedido #${o.orderNumber}?`, () => updateData('orders', appData.orders.filter(ord => ord.id !== o.id)))} className="p-4 bg-white border border-slate-100 text-slate-200 hover:text-rose-500 rounded-xl transition-all"><TrashIcon size={18}/></button>
+                              <button onClick={() => setShowSummary(o)} className="p-4 bg-slate-50 text-slate-400 rounded-2xl hover:bg-indigo-50 transition-all"><Share2Icon size={20}/></button>
+                              <button onClick={() => { setEditingOrder(o); setOrderForm(o); setIsOrderModalOpen(true); }} className="p-4 bg-slate-50 text-slate-400 rounded-2xl hover:bg-indigo-50 transition-all"><Edit3Icon size={20}/></button>
+                              <button onClick={() => askConfirmation("Borrar Pedido", `¿Eliminar pedido #${o.order_number}?`, () => updateData('orders', appData.orders.filter(ord => ord.id !== o.id)))} className="p-4 bg-white text-slate-200 hover:text-rose-500 transition-all"><TrashIcon size={18}/></button>
                            </div>
                         </div>
                      </div>
@@ -691,13 +633,13 @@ const App: React.FC = () => {
         )}
 
         {activeTab === 'clientes' && (
-           <div className="space-y-10 animate-in fade-in duration-500">
+           <div className="space-y-10">
               <div className="flex flex-col md:flex-row items-center justify-between gap-8 bg-white p-8 rounded-[3rem] shadow-sm border border-slate-200">
                  <div className="relative flex-1 w-full">
                     <SearchIcon className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300" size={20}/>
-                    <input type="text" placeholder="Filtrar por nombre o WhatsApp..." value={clientSearch} onChange={e => setClientSearch(e.target.value)} className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-5 pl-16 pr-8 outline-none font-bold" />
+                    <input type="text" placeholder="Buscar cliente..." value={clientSearch} onChange={e => setClientSearch(e.target.value)} className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-5 pl-16 outline-none font-bold" />
                  </div>
-                 <button onClick={() => { setClientForm({name: '', phone: '', address: ''}); setIsClientModalOpen(true); }} className="bg-slate-900 text-white px-10 py-5 rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-xl flex items-center gap-3 hover:bg-slate-800 transition-all"><PlusIcon size={16}/> Nuevo Cliente</button>
+                 <button onClick={() => { setClientForm({name: '', phone: '', address: ''}); setIsClientModalOpen(true); }} className="bg-slate-900 text-white px-10 py-5 rounded-2xl font-black text-[11px] uppercase shadow-xl flex items-center gap-3"><PlusIcon size={16}/> Nuevo Cliente</button>
               </div>
               <div className="bg-white rounded-[3.5rem] border border-slate-200 overflow-hidden shadow-2xl">
                  <table className="w-full text-left">
@@ -705,7 +647,6 @@ const App: React.FC = () => {
                        <tr className="text-[11px] font-black text-slate-400 uppercase tracking-widest">
                           <th className="px-10 py-8">Cliente</th>
                           <th className="px-10 py-8">WhatsApp</th>
-                          <th className="px-10 py-8">Dirección</th>
                           <th className="px-10 py-8 text-right">Operaciones</th>
                        </tr>
                     </thead>
@@ -713,28 +654,25 @@ const App: React.FC = () => {
                        {filteredClients.map(c => {
                          const isLocal = !(c as any).user_id;
                          return (
-                           <tr key={c.id} className="hover:bg-indigo-50/20 transition-all group">
+                           <tr key={c.id} className="hover:bg-indigo-50/20 group">
                               <td className="px-10 py-8">
                                  <div className="flex items-center gap-5">
-                                    <div className="w-12 h-12 bg-slate-900 text-white rounded-2xl flex items-center justify-center font-black text-xl uppercase shadow-lg">
-                                      {c.name.charAt(0)}
-                                    </div>
+                                    <div className="w-12 h-12 bg-slate-900 text-white rounded-2xl flex items-center justify-center font-black text-xl shadow-lg">{c.name.charAt(0)}</div>
                                     <div>
                                        <div className="font-black text-slate-900 uppercase text-sm leading-none mb-1 flex items-center gap-2">
                                           {c.name}
-                                          {isLocal && session?.user && <div className="bg-rose-100 text-rose-500 px-2 py-0.5 rounded text-[8px] flex items-center gap-1 font-black"><CloudOffIcon size={10}/> LOCAL</div>}
+                                          {isLocal && session?.user && <div className="bg-rose-100 text-rose-500 px-2 py-0.5 rounded text-[8px] font-black">LOCAL</div>}
                                           {!isLocal && session?.user && <CloudIcon size={12} className="text-emerald-500"/>}
                                        </div>
-                                       <div className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">Registrado: {new Date(c.createdAt || 0).toLocaleDateString()}</div>
+                                       <div className="text-[10px] font-bold text-slate-300">ID: {c.id.slice(-6)}</div>
                                     </div>
                                  </div>
                               </td>
                               <td className="px-10 py-8 font-black text-slate-600 text-sm">{c.phone}</td>
-                              <td className="px-10 py-8 font-bold text-slate-400 text-xs uppercase">{c.address || 'Sin dirección'}</td>
                               <td className="px-10 py-8 text-right">
                                  <div className="flex justify-end gap-3 opacity-0 group-hover:opacity-100 transition-all">
-                                    <button onClick={() => { setClientForm(c); setIsClientModalOpen(true); }} className="p-4 bg-indigo-50 text-indigo-600 rounded-2xl hover:bg-indigo-600 hover:text-white transition-all"><Edit3Icon size={18}/></button>
-                                    <button onClick={() => askConfirmation("Borrar Cliente", `¿Eliminar a ${c.name}?`, () => updateData('clients', appData.clients.filter(cl => cl.id !== c.id)))} className="p-4 bg-white border border-slate-100 text-slate-200 hover:text-rose-500 rounded-xl transition-all"><TrashIcon size={18}/></button>
+                                    <button onClick={() => { setClientForm(c); setIsClientModalOpen(true); }} className="p-4 bg-indigo-50 text-indigo-600 rounded-2xl transition-all"><Edit3Icon size={18}/></button>
+                                    <button onClick={() => askConfirmation("Borrar Cliente", `¿Eliminar a ${c.name}?`, () => updateData('clients', appData.clients.filter(cl => cl.id !== c.id)))} className="p-4 bg-white text-slate-200 hover:text-rose-500 rounded-xl transition-all"><TrashIcon size={18}/></button>
                                  </div>
                               </td>
                            </tr>
@@ -746,59 +684,49 @@ const App: React.FC = () => {
            </div>
         )}
 
-        {/* ... (resto de Ajustes y Modales se mantiene igual) ... */}
         {activeTab === 'config' && (
-           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 animate-in fade-in duration-500 pb-16">
+           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
               <section className="bg-white rounded-[3rem] p-8 border border-slate-200 shadow-sm">
                  <div className="flex items-center justify-between mb-8">
                     <h2 className="text-slate-900 font-black text-sm uppercase tracking-widest flex items-center gap-3"><TagIcon className="text-indigo-600" size={18}/> Categorías</h2>
-                    <button onClick={() => updateData('categories', [...appData.categories, { id: Date.now().toString(), name: 'Nueva', pricePerUnit: 0 }])} className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl hover:bg-indigo-600 transition-all"><PlusIcon size={18}/></button>
+                    <button onClick={() => updateData('categories', [...appData.categories, { id: Date.now().toString(), name: 'Nueva', pricePerUnit: 0 }])} className="p-2 bg-indigo-50 text-indigo-600 rounded-lg"><PlusIcon size={18}/></button>
                  </div>
                  <div className="space-y-4">
                     {appData.categories.map((cat, idx) => (
                       <div key={cat.id} className="flex items-center gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-100 group">
                          <input type="text" value={cat.name} onChange={e => { const nc = [...appData.categories]; nc[idx].name = e.target.value; updateData('categories', nc); }} className="flex-1 bg-transparent font-black text-[10px] uppercase outline-none" />
-                         <div className="flex items-center gap-1 font-black text-indigo-600 text-xs">$ <input type="number" value={cat.pricePerUnit} onChange={e => { const nc = [...appData.categories]; nc[idx].pricePerUnit = Number(e.target.value); updateData('categories', nc); }} className="w-16 bg-transparent text-right outline-none" /></div>
-                         <button onClick={() => askConfirmation("Borrar Categoría", "¿Deseas eliminar esta categoría?", () => updateData('categories', appData.categories.filter(c => c.id !== cat.id)))} className="text-slate-200 hover:text-rose-500 transition-all opacity-0 group-hover:opacity-100"><TrashIcon size={16}/></button>
+                         <div className="font-black text-indigo-600 text-xs">$ <input type="number" value={cat.pricePerUnit} onChange={e => { const nc = [...appData.categories]; nc[idx].pricePerUnit = Number(e.target.value); updateData('categories', nc); }} className="w-16 bg-transparent text-right outline-none" /></div>
+                         <button onClick={() => updateData('categories', appData.categories.filter(c => c.id !== cat.id))} className="text-slate-200 hover:text-rose-500 opacity-0 group-hover:opacity-100"><TrashIcon size={16}/></button>
                       </div>
                     ))}
                  </div>
               </section>
               <section className="bg-white rounded-[3rem] p-8 border border-slate-200 shadow-sm">
-                 <div className="flex items-center justify-between mb-8">
-                    <h2 className="text-slate-900 font-black text-sm uppercase tracking-widest flex items-center gap-3"><LayersIcon className="text-indigo-600" size={18}/> Tarifas Prod.</h2>
-                    <button onClick={() => updateData('costTiers', [...appData.costTiers, { id: Date.now().toString(), minLargo: 0, maxLargo: 0, precioPorCm: 0 }])} className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl transition-all"><PlusIcon size={18}/></button>
-                 </div>
+                 <h2 className="text-slate-900 font-black text-sm uppercase tracking-widest flex items-center gap-3 mb-8"><LayersIcon className="text-indigo-600" size={18}/> Tarifas Prod.</h2>
                  <div className="space-y-3">
                     {appData.costTiers.map((tier, idx) => (
-                      <div key={tier.id} className="flex gap-2 items-center bg-slate-50 p-3 rounded-2xl border border-slate-100 group">
-                         <input type="number" value={tier.minLargo} onChange={e => { const nt = [...appData.costTiers]; nt[idx].minLargo = Number(e.target.value); updateData('costTiers', nt); }} className="w-12 bg-white border border-slate-200 rounded p-1 text-[10px] font-black text-center" />
+                      <div key={tier.id} className="flex gap-2 items-center bg-slate-50 p-3 rounded-2xl group">
+                         <input type="number" value={tier.minLargo} onChange={e => { const nt = [...appData.costTiers]; nt[idx].minLargo = Number(e.target.value); updateData('costTiers', nt); }} className="w-12 bg-white rounded p-1 text-[10px] font-black text-center" />
                          <span className="text-slate-300 font-black">→</span>
-                         <input type="number" value={tier.maxLargo} onChange={e => { const nt = [...appData.costTiers]; nt[idx].maxLargo = Number(e.target.value); updateData('costTiers', nt); }} className="w-12 bg-white border border-slate-200 rounded p-1 text-[10px] font-black text-center" />
+                         <input type="number" value={tier.maxLargo} onChange={e => { const nt = [...appData.costTiers]; nt[idx].maxLargo = Number(e.target.value); updateData('costTiers', nt); }} className="w-12 bg-white rounded p-1 text-[10px] font-black text-center" />
                          <div className="flex-1 text-right font-black text-indigo-600 text-xs">$ <input type="number" value={tier.precioPorCm} onChange={e => { const nt = [...appData.costTiers]; nt[idx].precioPorCm = Number(e.target.value); updateData('costTiers', nt); }} className="w-16 bg-transparent text-right outline-none" /></div>
-                         <button onClick={() => askConfirmation("Borrar Tarifa", "¿Eliminar escala de producción?", () => updateData('costTiers', appData.costTiers.filter(t => t.id !== tier.id)))} className="text-slate-200 hover:text-rose-500 transition-all opacity-0 group-hover:opacity-100"><TrashIcon size={16}/></button>
+                         <button onClick={() => updateData('costTiers', appData.costTiers.filter(t => t.id !== tier.id))} className="text-slate-200 hover:text-rose-500 opacity-0 group-hover:opacity-100"><TrashIcon size={16}/></button>
                       </div>
                     ))}
                  </div>
               </section>
-              <section className="bg-white rounded-[3rem] p-8 border border-slate-200 shadow-sm flex flex-col">
-                 <div className="flex items-center justify-between mb-8">
-                    <h2 className="text-slate-900 font-black text-sm uppercase tracking-widest flex items-center gap-3"><PercentIcon className="text-indigo-600" size={18}/> Descuentos</h2>
-                    <button onClick={() => updateData('quantityDiscounts', [...appData.quantityDiscounts, { id: Date.now().toString(), minQty: 0, maxQty: 0, discountPercent: 0 }])} className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl transition-all"><PlusIcon size={18}/></button>
-                 </div>
-                 <div className="space-y-3 flex-1">
+              <section className="bg-white rounded-[3rem] p-8 border border-slate-200 shadow-sm">
+                 <h2 className="text-slate-900 font-black text-sm uppercase tracking-widest flex items-center gap-3 mb-8"><PercentIcon className="text-indigo-600" size={18}/> Descuentos</h2>
+                 <div className="space-y-3">
                     {appData.quantityDiscounts.map((disc, idx) => (
-                      <div key={disc.id} className="flex gap-2 items-center bg-slate-50 p-3 rounded-2xl border border-slate-100 group">
-                         <input type="number" placeholder="Min" value={disc.minQty} onChange={e => { const nd = [...appData.quantityDiscounts]; nd[idx].minQty = Number(e.target.value); updateData('quantityDiscounts', nd); }} className="w-12 bg-white border border-slate-200 rounded p-1 text-[10px] font-black text-center" />
+                      <div key={disc.id} className="flex gap-2 items-center bg-slate-50 p-3 rounded-2xl group">
+                         <input type="number" value={disc.minQty} onChange={e => { const nd = [...appData.quantityDiscounts]; nd[idx].minQty = Number(e.target.value); updateData('quantityDiscounts', nd); }} className="w-12 bg-white rounded p-1 text-[10px] font-black text-center" />
                          <span className="text-slate-300 font-black">→</span>
-                         <input type="number" placeholder="Max" value={disc.maxQty} onChange={e => { const nd = [...appData.quantityDiscounts]; nd[idx].maxQty = Number(e.target.value); updateData('quantityDiscounts', nd); }} className="w-12 bg-white border border-slate-200 rounded p-1 text-[10px] font-black text-center" />
-                         <div className="flex-1 text-right font-black text-emerald-600 text-xs"><input type="number" placeholder="%" value={disc.discountPercent} onChange={e => { const nd = [...appData.quantityDiscounts]; nd[idx].discountPercent = Number(e.target.value); updateData('quantityDiscounts', nd); }} className="w-12 bg-transparent text-right outline-none" /> %</div>
-                         <button onClick={() => askConfirmation("Borrar Descuento", "¿Eliminar regla de descuento?", () => updateData('quantityDiscounts', appData.quantityDiscounts.filter(d => d.id !== disc.id)))} className="text-slate-200 hover:text-rose-500 transition-all opacity-0 group-hover:opacity-100"><TrashIcon size={16}/></button>
+                         <input type="number" value={disc.maxQty} onChange={e => { const nd = [...appData.quantityDiscounts]; nd[idx].maxQty = Number(e.target.value); updateData('quantityDiscounts', nd); }} className="w-12 bg-white rounded p-1 text-[10px] font-black text-center" />
+                         <div className="flex-1 text-right font-black text-emerald-600 text-xs"><input type="number" value={disc.discountPercent} onChange={e => { const nd = [...appData.quantityDiscounts]; nd[idx].discountPercent = Number(e.target.value); updateData('quantityDiscounts', nd); }} className="w-12 bg-transparent text-right outline-none" />%</div>
+                         <button onClick={() => updateData('quantityDiscounts', appData.quantityDiscounts.filter(d => d.id !== disc.id))} className="text-slate-200 hover:text-rose-500 opacity-0 group-hover:opacity-100"><TrashIcon size={16}/></button>
                       </div>
                     ))}
-                 </div>
-                 <div className="mt-8 pt-8 border-t border-slate-100">
-                    <button onClick={() => askConfirmation("Borrar Todo", "Se eliminará el caché local. ¿Confirmas?", () => { localStorage.clear(); window.location.reload(); })} className="w-full flex items-center justify-center gap-2 py-3 bg-rose-50 text-rose-500 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-rose-500 hover:text-white transition-all"><AlertCircleIcon size={14}/> Limpiar Caché Local</button>
                  </div>
               </section>
            </div>
@@ -812,15 +740,9 @@ const App: React.FC = () => {
               <button onClick={() => setIsAuthModalOpen(false)} className="absolute top-8 right-8 text-slate-300 hover:text-slate-900 transition-all"><XIcon size={24}/></button>
               <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter mb-4 flex items-center gap-3"><CloudIcon className="text-indigo-600"/> Cuenta Taller</h2>
               <form onSubmit={handleAuth} className="space-y-5">
-                 <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Email del Taller</label>
-                    <input type="email" required value={authEmail} onChange={e => setAuthEmail(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl p-4 font-bold outline-none focus:border-indigo-500" placeholder="taller@ejemplo.com" />
-                 </div>
-                 <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Contraseña</label>
-                    <input type="password" required value={authPassword} onChange={e => setAuthPassword(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl p-4 font-bold outline-none focus:border-indigo-500" placeholder="••••••••" />
-                 </div>
-                 <button type="submit" disabled={authLoading} className="w-full bg-indigo-600 text-white font-black py-5 rounded-2xl uppercase text-[11px] tracking-widest shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center justify-center gap-3 disabled:opacity-50">
+                 <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase ml-2">Email</label><input type="email" required value={authEmail} onChange={e => setAuthEmail(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl p-4 font-bold outline-none" placeholder="taller@ejemplo.com" /></div>
+                 <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase ml-2">Contraseña</label><input type="password" required value={authPassword} onChange={e => setAuthPassword(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl p-4 font-bold outline-none" placeholder="••••••••" /></div>
+                 <button type="submit" disabled={authLoading} className="w-full bg-indigo-600 text-white font-black py-5 rounded-2xl uppercase text-[11px] shadow-xl hover:bg-indigo-700 flex items-center justify-center gap-3">
                     {authLoading ? <Loader2Icon className="animate-spin" size={18}/> : 'Sincronizar Ahora'}
                  </button>
               </form>
@@ -828,62 +750,29 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* MODALES ADICIONALES (Order, Client, Confirm, Summary) */}
+      {/* MODAL PEDIDO */}
       {isOrderModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4 animate-in fade-in duration-300">
-           <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl relative border border-slate-200">
-              <h2 className="text-xl font-black text-slate-900 uppercase tracking-tighter mb-6 flex items-center gap-3 leading-none">
-                 <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg"><PackageIcon size={20}/></div>
-                 {editingOrder ? 'Editar Pedido' : 'Nuevo Pedido'}
-              </h2>
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+           <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl relative">
+              <h2 className="text-xl font-black text-slate-900 uppercase mb-6 flex items-center gap-3"><PackageIcon className="text-indigo-600"/> {editingOrder ? 'Editar Pedido' : 'Nuevo Pedido'}</h2>
               <div className="space-y-4">
                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Nº Pedido</label>
-                      <input type="text" value={orderForm.orderNumber} onChange={e => setOrderForm({...orderForm, orderNumber: e.target.value})} className="w-full bg-slate-50 border-2 border-slate-200 rounded-xl p-3 font-black outline-none focus:border-indigo-500" />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Estado</label>
-                      <select value={orderForm.statusId} onChange={e => setOrderForm({...orderForm, statusId: e.target.value})} className="w-full bg-slate-50 border-2 border-slate-200 rounded-xl p-3 font-black outline-none">
-                        {appData.statuses.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                      </select>
-                    </div>
+                    <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase ml-2">Nº</label><input type="text" value={orderForm.order_number} onChange={e => setOrderForm({...orderForm, order_number: e.target.value})} className="w-full bg-slate-50 border-2 border-slate-200 rounded-xl p-3 font-black" /></div>
+                    <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase ml-2">Estado</label><select value={orderForm.status_id} onChange={e => setOrderForm({...orderForm, status_id: e.target.value})} className="w-full bg-slate-50 border-2 border-slate-200 rounded-xl p-3 font-black">{appData.statuses.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
                  </div>
-                 <div className="space-y-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Cliente</label>
-                    <select value={orderForm.clientId} onChange={e => setOrderForm({...orderForm, clientId: e.target.value})} className="w-full bg-slate-50 border-2 border-slate-200 rounded-xl p-3 font-black outline-none focus:border-indigo-500">
-                      {appData.clients.length === 0 ? <option>Registra un cliente</option> : appData.clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    </select>
+                 <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase ml-2">Cliente</label><select value={orderForm.client_id} onChange={e => setOrderForm({...orderForm, client_id: e.target.value})} className="w-full bg-slate-50 border-2 border-slate-200 rounded-xl p-3 font-black">{appData.clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+                 <div className="grid grid-cols-3 gap-3">
+                    <input type="number" placeholder="W" value={orderForm.width || ''} onChange={e => setOrderForm({...orderForm, width: Number(e.target.value)})} className="bg-slate-50 border-2 border-slate-200 rounded-xl p-3 font-black" />
+                    <input type="number" placeholder="H" value={orderForm.height || ''} onChange={e => setOrderForm({...orderForm, height: Number(e.target.value)})} className="bg-slate-50 border-2 border-slate-200 rounded-xl p-3 font-black" />
+                    <input type="number" placeholder="Qty" value={orderForm.quantity || ''} onChange={e => setOrderForm({...orderForm, quantity: Number(e.target.value)})} className="bg-slate-50 border-2 border-slate-200 rounded-xl p-3 font-black" />
                  </div>
                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Medidas (cm)</label>
-                      <div className="flex items-center gap-1">
-                        <input type="number" placeholder="W" value={orderForm.width || ''} onChange={e => setOrderForm({...orderForm, width: Number(e.target.value)})} className="w-full bg-slate-50 border-2 border-slate-200 rounded-xl p-3 font-black text-center" />
-                        <span className="text-slate-300 font-black">x</span>
-                        <input type="number" placeholder="H" value={orderForm.height || ''} onChange={e => setOrderForm({...orderForm, height: Number(e.target.value)})} className="w-full bg-slate-50 border-2 border-slate-200 rounded-xl p-3 font-black text-center" />
-                      </div>
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Cantidad</label>
-                      <input type="number" value={orderForm.quantity || ''} onChange={e => setOrderForm({...orderForm, quantity: Number(e.target.value)})} className="w-full bg-slate-50 border-2 border-slate-200 rounded-xl p-3 font-black text-center" />
-                    </div>
-                 </div>
-                 <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Categoría</label>
-                      <select value={orderForm.categoryId} onChange={e => setOrderForm({...orderForm, categoryId: e.target.value})} className="w-full bg-slate-50 border-2 border-slate-200 rounded-xl p-3 font-black appearance-none">
-                        {appData.categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                      </select>
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Seña ($)</label>
-                      <input type="number" value={orderForm.deposit || ''} onChange={e => setOrderForm({...orderForm, deposit: Number(e.target.value)})} className="w-full bg-emerald-50 border-2 border-emerald-100 rounded-xl p-3 font-black text-emerald-700 outline-none" />
-                    </div>
+                    <select value={orderForm.category_id} onChange={e => setOrderForm({...orderForm, category_id: e.target.value})} className="w-full bg-slate-50 border-2 border-slate-200 rounded-xl p-3 font-black">{appData.categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+                    <input type="number" placeholder="Seña $" value={orderForm.deposit || ''} onChange={e => setOrderForm({...orderForm, deposit: Number(e.target.value)})} className="w-full bg-emerald-50 border-2 border-emerald-100 rounded-xl p-3 font-black text-emerald-700" />
                  </div>
                  <div className="pt-6 flex gap-3">
-                    <button onClick={() => setIsOrderModalOpen(false)} className="flex-1 py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest text-slate-400 hover:bg-slate-50">Cancelar</button>
-                    <button onClick={saveOrder} className="flex-[2] py-4 rounded-2xl bg-indigo-600 text-white font-black text-[11px] uppercase tracking-widest shadow-xl hover:bg-indigo-700 transition-all active:scale-95">Guardar Pedido</button>
+                    <button onClick={() => setIsOrderModalOpen(false)} className="flex-1 py-4 font-black text-slate-400 uppercase">Cancelar</button>
+                    <button onClick={saveOrder} className="flex-[2] py-4 bg-indigo-600 text-white font-black rounded-2xl shadow-xl hover:bg-indigo-700">Guardar Pedido</button>
                  </div>
               </div>
            </div>
@@ -896,13 +785,13 @@ const App: React.FC = () => {
               <button onClick={() => setShowSummary(null)} className="absolute top-6 right-6 text-slate-300 hover:text-slate-900 transition-all active:scale-125"><XIcon size={24}/></button>
               <div className="w-20 h-20 bg-indigo-600 rounded-[2rem] flex items-center justify-center text-white mb-6 shadow-2xl shadow-indigo-200"><CalculatorIcon size={36}/></div>
               <h2 className="font-black text-2xl text-slate-900 uppercase mb-1 tracking-tighter leading-none">Ticket Pedido</h2>
-              <p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.3em] mb-6">ID #{showSummary.orderNumber}</p>
+              <p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.3em] mb-6">ID #{showSummary.order_number}</p>
               
               <div className="w-full space-y-4 border-y-2 border-slate-50 py-6 mb-8">
-                 <div className="flex justify-between text-[11px]"><span className="text-slate-400 font-bold uppercase tracking-widest">Cliente</span><span className="font-black text-slate-900 uppercase">{appData.clients.find(c => c.id === showSummary.clientId)?.name}</span></div>
+                 <div className="flex justify-between text-[11px]"><span className="text-slate-400 font-bold uppercase tracking-widest">Cliente</span><span className="font-black text-slate-900 uppercase">{appData.clients.find(c => c.id === showSummary.client_id)?.name}</span></div>
                  <div className="flex justify-between text-[11px]"><span className="text-slate-400 font-bold uppercase tracking-widest">Medida</span><span className="font-black text-slate-900">{showSummary.width}x{showSummary.height} cm</span></div>
                  <div className="flex justify-between text-[11px]"><span className="text-slate-400 font-bold uppercase tracking-widest">Cantidad</span><span className="font-black text-slate-900">{showSummary.quantity} u.</span></div>
-                 <div className="flex justify-between pt-4 border-t-2 border-slate-50"><span className="text-indigo-600 font-black uppercase text-[10px] tracking-widest">Total</span><span className="font-black text-indigo-600 text-xl">${showSummary.totalPrice}</span></div>
+                 <div className="flex justify-between pt-4 border-t-2 border-slate-50"><span className="text-indigo-600 font-black uppercase text-[10px] tracking-widest">Total</span><span className="font-black text-indigo-600 text-xl">${showSummary.total_price}</span></div>
                  <div className="flex justify-between items-center"><span className="text-emerald-500 font-black uppercase text-[10px] tracking-widest">Seña</span><span className="font-black text-emerald-500 text-sm">${showSummary.deposit}</span></div>
                  <div className="flex justify-between items-center"><span className="text-rose-500 font-black uppercase text-[10px] tracking-widest">Restante</span><span className="font-black text-rose-500 text-lg">${showSummary.balance}</span></div>
               </div>
@@ -915,19 +804,16 @@ const App: React.FC = () => {
       )}
 
       {isClientModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-6 animate-in fade-in duration-300">
-           <div className="bg-white w-full max-w-md rounded-[3.5rem] p-12 shadow-2xl relative overflow-hidden">
-              <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter mb-10 flex items-center gap-4"><div className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center text-white"><UsersIcon size={24}/></div> Ficha Cliente</h2>
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-6">
+           <div className="bg-white w-full max-w-md rounded-[3.5rem] p-12 shadow-2xl relative">
+              <h2 className="text-2xl font-black text-slate-900 uppercase mb-10 flex items-center gap-4"><div className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center text-white"><UsersIcon size={24}/></div> Ficha Cliente</h2>
               <div className="space-y-6">
-                 <div className="space-y-2"><label className="text-[11px] font-black text-slate-400 uppercase ml-2 tracking-widest">Nombre</label><input type="text" value={clientForm.name} onChange={e => setClientForm({...clientForm, name: e.target.value})} className="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl p-4 font-black outline-none focus:border-indigo-500" /></div>
-                 <div className="space-y-2">
-                    <label className="text-[11px] font-black text-slate-400 uppercase ml-2 tracking-widest">WhatsApp</label>
-                    <input type="text" value={clientForm.phone} placeholder="+54..." onChange={e => setClientForm({...clientForm, phone: e.target.value.replace(/[^0-9+]/g, '')})} className="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl p-4 font-black outline-none focus:border-indigo-500" />
-                 </div>
-                 <div className="space-y-2"><label className="text-[11px] font-black text-slate-400 uppercase ml-2 tracking-widest">Dirección</label><input type="text" value={clientForm.address} onChange={e => setClientForm({...clientForm, address: e.target.value})} className="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl p-4 font-black outline-none focus:border-indigo-500" /></div>
+                 <div className="space-y-2"><label className="text-[11px] font-black text-slate-400 uppercase ml-2">Nombre</label><input type="text" value={clientForm.name} onChange={e => setClientForm({...clientForm, name: e.target.value})} className="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl p-4 font-black outline-none focus:border-indigo-500" /></div>
+                 <div className="space-y-2"><label className="text-[11px] font-black text-slate-400 uppercase ml-2">WhatsApp</label><input type="text" value={clientForm.phone} placeholder="+54..." onChange={e => setClientForm({...clientForm, phone: e.target.value})} className="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl p-4 font-black outline-none focus:border-indigo-500" /></div>
+                 <div className="space-y-2"><label className="text-[11px] font-black text-slate-400 uppercase ml-2">Dirección</label><input type="text" value={clientForm.address} onChange={e => setClientForm({...clientForm, address: e.target.value})} className="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl p-4 font-black outline-none focus:border-indigo-500" /></div>
                  <div className="pt-6 flex gap-4">
-                    <button onClick={() => setIsClientModalOpen(false)} className="flex-1 py-5 font-black text-slate-400 text-xs uppercase tracking-widest">Cerrar</button>
-                    <button onClick={saveClient} className="flex-[2] py-5 bg-slate-900 text-white font-black rounded-2xl shadow-xl text-xs uppercase tracking-widest active:scale-95 transition-all">Guardar Cliente</button>
+                    <button onClick={() => setIsClientModalOpen(false)} className="flex-1 py-5 font-black text-slate-400 uppercase">Cerrar</button>
+                    <button onClick={saveClient} className="flex-[2] py-5 bg-slate-900 text-white font-black rounded-2xl shadow-xl hover:bg-slate-800">Guardar Cliente</button>
                  </div>
               </div>
            </div>
@@ -935,16 +821,14 @@ const App: React.FC = () => {
       )}
 
       {confirmModal && (
-        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-[300] flex items-center justify-center p-6 animate-in fade-in duration-200">
-           <div className="bg-white w-full max-sm rounded-[2.5rem] p-8 shadow-2xl text-center border border-rose-100">
-              <div className="w-16 h-16 bg-rose-50 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-6">
-                <AlertTriangleIcon size={32}/>
-              </div>
-              <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight mb-2 leading-none">{confirmModal.title}</h3>
-              <p className="text-slate-500 font-medium text-sm mb-8">{confirmModal.message}</p>
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-[300] flex items-center justify-center p-6">
+           <div className="bg-white w-full max-sm rounded-[2.5rem] p-8 shadow-2xl text-center">
+              <div className="w-16 h-16 bg-rose-50 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-6"><AlertTriangleIcon size={32}/></div>
+              <h3 className="text-xl font-black text-slate-900 uppercase mb-2">{confirmModal.title}</h3>
+              <p className="text-slate-500 text-sm mb-8">{confirmModal.message}</p>
               <div className="flex gap-3">
-                 <button onClick={() => setConfirmModal(null)} className="flex-1 py-4 rounded-2xl bg-slate-50 text-slate-400 font-black text-[10px] uppercase tracking-widest">Cancelar</button>
-                 <button onClick={() => { confirmModal.onConfirm(); setConfirmModal(null); }} className="flex-1 py-4 rounded-2xl bg-rose-500 text-white font-black text-[10px] uppercase tracking-widest shadow-lg shadow-rose-100 active:scale-95">Confirmar</button>
+                 <button onClick={() => setConfirmModal(null)} className="flex-1 py-4 bg-slate-50 rounded-2xl font-black text-[10px] uppercase">Cancelar</button>
+                 <button onClick={() => { confirmModal.onConfirm(); setConfirmModal(null); }} className="flex-1 py-4 bg-rose-500 text-white rounded-2xl font-black text-[10px] uppercase shadow-lg shadow-rose-100">Confirmar</button>
               </div>
            </div>
         </div>
