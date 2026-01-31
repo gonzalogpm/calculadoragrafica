@@ -70,6 +70,7 @@ const generateUUID = () => {
 
 // Convierte IDs numéricos viejos a UUIDs deterministas para Supabase
 const toSafeUUID = (id: string) => {
+  if (!id) return generateUUID();
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   if (uuidRegex.test(id)) return id;
   const numeric = id.replace(/\D/g, '').padStart(12, '0').slice(-12);
@@ -77,12 +78,12 @@ const toSafeUUID = (id: string) => {
 };
 
 const DEFAULT_CATEGORIES: Category[] = [
-  { id: generateUUID(), name: 'DE STOCK', pricePerUnit: 100 },
-  { id: generateUUID(), name: 'PERS. C/FONDO', pricePerUnit: 250 },
-  { id: generateUUID(), name: 'PERS. S/FONDO', pricePerUnit: 200 },
-  { id: generateUUID(), name: 'CARTOON C/FONDO', pricePerUnit: 400 },
-  { id: generateUUID(), name: 'CARTOON S/FONDO', pricePerUnit: 350 },
-  { id: generateUUID(), name: 'PLANCHA', pricePerUnit: 1500 },
+  { id: toSafeUUID("1"), name: 'DE STOCK', pricePerUnit: 100 },
+  { id: toSafeUUID("2"), name: 'PERS. C/FONDO', pricePerUnit: 250 },
+  { id: toSafeUUID("3"), name: 'PERS. S/FONDO', pricePerUnit: 200 },
+  { id: toSafeUUID("4"), name: 'CARTOON C/FONDO', pricePerUnit: 400 },
+  { id: toSafeUUID("5"), name: 'CARTOON S/FONDO', pricePerUnit: 350 },
+  { id: toSafeUUID("6"), name: 'PLANCHA', pricePerUnit: 1500 },
 ];
 
 const DEFAULT_STATUSES: OrderStatus[] = [
@@ -132,7 +133,7 @@ const App: React.FC = () => {
   const ensureISO = (val: any): string => {
     if (!val) return new Date().toISOString();
     if (typeof val === 'number') return new Date(val).toISOString();
-    if (val.length < 10) return new Date().toISOString();
+    if (String(val).length < 10) return new Date().toISOString();
     return val;
   };
 
@@ -144,6 +145,8 @@ const App: React.FC = () => {
           let parsed = JSON.parse(saved);
           if (parsed.clients) parsed.clients = parsed.clients.map((c: any) => ({ ...c, created_at: ensureISO(c.created_at || c.createdAt) }));
           if (parsed.orders) parsed.orders = parsed.orders.map((o: any) => ({ ...o, created_at: ensureISO(o.created_at || o.createdAt) }));
+          // Sanear categorías en localstorage
+          if (parsed.categories) parsed.categories = parsed.categories.map((cat: any) => ({ ...cat, id: toSafeUUID(cat.id) }));
           setAppData(prev => ({ ...prev, ...parsed }));
         } catch (e) { }
       }
@@ -208,7 +211,7 @@ const App: React.FC = () => {
           width: o.width,
           height: o.height,
           quantity: o.quantity,
-          category_id: o.category_id, // Asumimos que las categorías por defecto ya tienen UUID
+          category_id: toSafeUUID(o.category_id), // CORRECCIÓN: Aplicado toSafeUUID
           total_price: o.total_price,
           deposit: o.deposit,
           balance: o.balance,
@@ -317,7 +320,13 @@ const App: React.FC = () => {
       : { ...orderForm, id: generateUUID(), total_price, balance: total_price - deposit, created_at: new Date().toISOString() } as Order;
     
     updateData('orders', editingOrder ? appData.orders.map(o => o.id === editingOrder.id ? updatedOrder : o) : [...appData.orders, updatedOrder]);
-    if (supabase && session?.user) await supabase.from('orders').upsert({ ...updatedOrder, id: toSafeUUID(updatedOrder.id), client_id: toSafeUUID(updatedOrder.client_id), user_id: session.user.id });
+    if (supabase && session?.user) await supabase.from('orders').upsert({ 
+      ...updatedOrder, 
+      id: toSafeUUID(updatedOrder.id), 
+      client_id: toSafeUUID(updatedOrder.client_id), 
+      category_id: toSafeUUID(updatedOrder.category_id), // CORRECCIÓN: Aplicado toSafeUUID
+      user_id: session.user.id 
+    });
     setIsOrderModalOpen(false);
   };
 
