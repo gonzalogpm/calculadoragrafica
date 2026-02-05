@@ -123,7 +123,7 @@ const App: React.FC = () => {
     return String(val).length < 10 ? new Date().toISOString() : val;
   };
 
-  // Función núcleo de actualización de estado y persistencia
+  // Función núcleo de actualización de estado y persistencia local
   const updateData = useCallback((field: keyof AppDataType, value: any) => {
     setAppData(prev => {
         const newData = { ...prev, [field]: value };
@@ -131,6 +131,19 @@ const App: React.FC = () => {
         return newData;
     });
   }, []);
+
+  // Función para sincronizar settings individuales
+  const syncSettingsToCloud = async (newData: Partial<AppDataType>) => {
+    if (!supabase || !session?.user) return;
+    try {
+      await supabase.from('settings').upsert({ 
+        user_id: session.user.id, 
+        sheet_width: newData.sheetWidth ?? appData.sheetWidth, 
+        profit_margin: newData.profitMargin ?? appData.profitMargin, 
+        design_spacing: newData.designSpacing ?? appData.designSpacing 
+      });
+    } catch (e) { console.error("Error al sincronizar ajustes:", e); }
+  };
 
   // Inicialización y carga de datos
   useEffect(() => {
@@ -272,7 +285,15 @@ const App: React.FC = () => {
     }
   };
 
-  // CRUD Lógica - Descuentos y Rangos (Corregido para evitar persistencia errónea)
+  // CRUD Lógica - Descuentos y Rangos con autoguardado cloud
+  const upsertDiscountCloud = async (d: QuantityDiscount) => {
+    if (!supabase || !session?.user) return;
+    await supabase.from('quantity_discounts').upsert({
+      id: toSafeUUID(d.id), min_qty: d.minQty, max_qty: d.maxQty, 
+      discount_percent: d.discountPercent, user_id: session.user.id
+    });
+  };
+
   const deleteDiscount = async (id: string) => {
     updateData('quantityDiscounts', appData.quantityDiscounts.filter(d => d.id !== id));
     if (supabase && session?.user) {
@@ -280,11 +301,27 @@ const App: React.FC = () => {
     }
   };
 
+  const upsertTierCloud = async (t: CostTier) => {
+    if (!supabase || !session?.user) return;
+    await supabase.from('cost_tiers').upsert({
+      id: toSafeUUID(t.id), min_largo: t.minLargo, max_largo: t.maxLargo, 
+      precio_por_cm: t.precioPorCm, user_id: session.user.id
+    });
+  };
+
   const deleteTier = async (id: string) => {
     updateData('costTiers', appData.costTiers.filter(t => t.id !== id));
     if (supabase && session?.user) {
       await supabase.from('cost_tiers').delete().eq('id', toSafeUUID(id));
     }
+  };
+
+  const upsertCategoryCloud = async (c: Category) => {
+    if (!supabase || !session?.user) return;
+    await supabase.from('categories').upsert({
+      id: toSafeUUID(c.id), name: c.name, 
+      price_per_unit: c.pricePerUnit, user_id: session.user.id
+    });
   };
 
   const deleteCategory = async (id: string) => {
@@ -411,10 +448,31 @@ const App: React.FC = () => {
                 <h2 className="text-slate-900 font-black text-[10px] uppercase tracking-widest flex items-center gap-2 mb-6"><Settings2Icon size={16}/> Configuración</h2>
                 <div className="space-y-4">
                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase ml-2">Pliego (cm)</label><input type="number" value={appData.sheetWidth} onChange={e => updateData('sheetWidth', Number(e.target.value))} className="w-full bg-slate-50 p-4 rounded-xl font-bold" /></div>
-                      <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase ml-2">Margen %</label><input type="number" value={appData.profitMargin} onChange={e => updateData('profitMargin', Number(e.target.value))} className="w-full bg-slate-50 p-4 rounded-xl font-bold" /></div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Pliego (cm)</label>
+                        <input type="number" value={appData.sheetWidth} onChange={e => {
+                           const val = Number(e.target.value);
+                           updateData('sheetWidth', val);
+                           syncSettingsToCloud({ sheetWidth: val });
+                        }} className="w-full bg-slate-50 p-4 rounded-xl font-bold" />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Margen %</label>
+                        <input type="number" value={appData.profitMargin} onChange={e => {
+                           const val = Number(e.target.value);
+                           updateData('profitMargin', val);
+                           syncSettingsToCloud({ profitMargin: val });
+                        }} className="w-full bg-slate-50 p-4 rounded-xl font-bold" />
+                      </div>
                    </div>
-                   <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase ml-2">Espaciado (cm)</label><input type="number" step="0.1" value={appData.designSpacing} onChange={e => updateData('designSpacing', Number(e.target.value))} className="w-full bg-slate-50 p-4 rounded-xl font-bold" /></div>
+                   <div className="space-y-1">
+                     <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Espaciado (cm)</label>
+                     <input type="number" step="0.1" value={appData.designSpacing} onChange={e => {
+                        const val = Number(e.target.value);
+                        updateData('designSpacing', val);
+                        syncSettingsToCloud({ designSpacing: val });
+                     }} className="w-full bg-slate-50 p-4 rounded-xl font-bold" />
+                   </div>
                 </div>
               </section>
               <section className="bg-white rounded-[2rem] p-8 border shadow-sm">
@@ -590,13 +648,27 @@ const App: React.FC = () => {
               <section className="bg-white rounded-[2rem] p-8 border shadow-sm">
                  <div className="flex items-center justify-between mb-8">
                     <h2 className="text-slate-900 font-black text-[10px] uppercase tracking-widest flex items-center gap-2"><TagIcon size={16}/> Categorías</h2>
-                    <button onClick={() => updateData('categories', [...appData.categories, { id: generateUUID(), name: 'NUEVA', pricePerUnit: 0 }])} className="p-2 bg-indigo-50 text-indigo-600 rounded-lg transition-all hover:bg-indigo-100"><PlusIcon size={16}/></button>
+                    <button onClick={() => {
+                       const newCat = { id: generateUUID(), name: 'NUEVA', pricePerUnit: 0 };
+                       updateData('categories', [...appData.categories, newCat]);
+                       upsertCategoryCloud(newCat);
+                    }} className="p-2 bg-indigo-50 text-indigo-600 rounded-lg transition-all hover:bg-indigo-100"><PlusIcon size={16}/></button>
                  </div>
                  <div className="space-y-4">
                     {appData.categories.map((cat, idx) => (
                       <div key={cat.id} className="flex items-center gap-3 bg-slate-50 p-4 rounded-xl border group hover:border-indigo-100 transition-all">
-                         <input type="text" value={cat.name} onChange={e => { const nc = [...appData.categories]; nc[idx].name = e.target.value; updateData('categories', nc); }} className="flex-1 bg-transparent font-black text-[10px] uppercase outline-none" />
-                         <div className="font-black text-indigo-600 text-xs">$ <input type="number" value={cat.pricePerUnit} onChange={e => { const nc = [...appData.categories]; nc[idx].pricePerUnit = Number(e.target.value); updateData('categories', nc); }} className="w-16 bg-transparent text-right outline-none" /></div>
+                         <input type="text" value={cat.name} onChange={e => { 
+                            const nc = [...appData.categories]; 
+                            nc[idx].name = e.target.value; 
+                            updateData('categories', nc); 
+                            upsertCategoryCloud(nc[idx]);
+                         }} className="flex-1 bg-transparent font-black text-[10px] uppercase outline-none" />
+                         <div className="font-black text-indigo-600 text-xs">$ <input type="number" value={cat.pricePerUnit} onChange={e => { 
+                            const nc = [...appData.categories]; 
+                            nc[idx].pricePerUnit = Number(e.target.value); 
+                            updateData('categories', nc); 
+                            upsertCategoryCloud(nc[idx]);
+                         }} className="w-16 bg-transparent text-right outline-none" /></div>
                          <button onClick={() => deleteCategory(cat.id)} className="text-slate-200 hover:text-rose-500 transition-all"><TrashIcon size={14}/></button>
                       </div>
                     ))}
@@ -605,15 +677,34 @@ const App: React.FC = () => {
               <section className="bg-white rounded-[2rem] p-8 border shadow-sm">
                  <div className="flex items-center justify-between mb-8">
                     <h2 className="text-slate-900 font-black text-[10px] uppercase tracking-widest flex items-center gap-2"><LayersIcon size={16}/> Tarifas por Largo</h2>
-                    <button onClick={() => updateData('costTiers', [...appData.costTiers, { id: generateUUID(), minLargo: 0, maxLargo: 0, precioPorCm: 0 }])} className="p-2 bg-indigo-50 text-indigo-600 rounded-lg transition-all hover:bg-indigo-100"><PlusIcon size={16}/></button>
+                    <button onClick={() => {
+                       const newTier = { id: generateUUID(), minLargo: 0, maxLargo: 0, precioPorCm: 0 };
+                       updateData('costTiers', [...appData.costTiers, newTier]);
+                       upsertTierCloud(newTier);
+                    }} className="p-2 bg-indigo-50 text-indigo-600 rounded-lg transition-all hover:bg-indigo-100"><PlusIcon size={16}/></button>
                  </div>
                  <div className="space-y-3">
                     {appData.costTiers.map((t, idx) => (
                       <div key={t.id} className="flex gap-2 items-center bg-slate-50 p-3 rounded-xl border hover:border-indigo-100 transition-all">
-                         <input type="number" value={t.minLargo} onChange={e => { const nt = [...appData.costTiers]; nt[idx].minLargo = Number(e.target.value); updateData('costTiers', nt); }} className="w-12 bg-white rounded p-1 text-[9px] font-black text-center border" />
+                         <input type="number" value={t.minLargo} onChange={e => { 
+                            const nt = [...appData.costTiers]; 
+                            nt[idx].minLargo = Number(e.target.value); 
+                            updateData('costTiers', nt); 
+                            upsertTierCloud(nt[idx]);
+                         }} className="w-12 bg-white rounded p-1 text-[9px] font-black text-center border" />
                          <span className="text-slate-300">→</span>
-                         <input type="number" value={t.maxLargo} onChange={e => { const nt = [...appData.costTiers]; nt[idx].maxLargo = Number(e.target.value); updateData('costTiers', nt); }} className="w-12 bg-white rounded p-1 text-[9px] font-black text-center border" />
-                         <div className="flex-1 text-right font-black text-indigo-600 text-xs">$ <input type="number" value={t.precioPorCm} onChange={e => { const nt = [...appData.costTiers]; nt[idx].precioPorCm = Number(e.target.value); updateData('costTiers', nt); }} className="w-16 bg-transparent text-right outline-none" /></div>
+                         <input type="number" value={t.maxLargo} onChange={e => { 
+                            const nt = [...appData.costTiers]; 
+                            nt[idx].maxLargo = Number(e.target.value); 
+                            updateData('costTiers', nt); 
+                            upsertTierCloud(nt[idx]);
+                         }} className="w-12 bg-white rounded p-1 text-[9px] font-black text-center border" />
+                         <div className="flex-1 text-right font-black text-indigo-600 text-xs">$ <input type="number" value={t.precioPorCm} onChange={e => { 
+                            const nt = [...appData.costTiers]; 
+                            nt[idx].precioPorCm = Number(e.target.value); 
+                            updateData('costTiers', nt); 
+                            upsertTierCloud(nt[idx]);
+                         }} className="w-16 bg-transparent text-right outline-none" /></div>
                          <button onClick={() => deleteTier(t.id)} className="text-slate-200 hover:text-rose-500 transition-all"><TrashIcon size={14}/></button>
                       </div>
                     ))}
@@ -622,15 +713,34 @@ const App: React.FC = () => {
               <section className="bg-white rounded-[2rem] p-8 border shadow-sm">
                  <div className="flex items-center justify-between mb-8">
                     <h2 className="text-slate-900 font-black text-[10px] uppercase tracking-widest flex items-center gap-2"><PercentIcon size={16}/> Descuentos Qty</h2>
-                    <button onClick={() => updateData('quantityDiscounts', [...appData.quantityDiscounts, { id: generateUUID(), minQty: 0, maxQty: 0, discountPercent: 0 }])} className="p-2 bg-indigo-50 text-indigo-600 rounded-lg transition-all hover:bg-indigo-100"><PlusIcon size={16}/></button>
+                    <button onClick={() => {
+                       const newDisc = { id: generateUUID(), minQty: 0, maxQty: 0, discountPercent: 0 };
+                       updateData('quantityDiscounts', [...appData.quantityDiscounts, newDisc]);
+                       upsertDiscountCloud(newDisc);
+                    }} className="p-2 bg-indigo-50 text-indigo-600 rounded-lg transition-all hover:bg-indigo-100"><PlusIcon size={16}/></button>
                  </div>
                  <div className="space-y-3">
                     {appData.quantityDiscounts.map((d, idx) => (
                       <div key={d.id} className="flex gap-2 items-center bg-slate-50 p-3 rounded-xl border hover:border-emerald-100 transition-all">
-                         <input type="number" value={d.minQty} onChange={e => { const nd = [...appData.quantityDiscounts]; nd[idx].minQty = Number(e.target.value); updateData('quantityDiscounts', nd); }} className="w-12 bg-white rounded p-1 text-[9px] font-black text-center border" />
+                         <input type="number" value={d.minQty} onChange={e => { 
+                            const nd = [...appData.quantityDiscounts]; 
+                            nd[idx].minQty = Number(e.target.value); 
+                            updateData('quantityDiscounts', nd); 
+                            upsertDiscountCloud(nd[idx]);
+                         }} className="w-12 bg-white rounded p-1 text-[9px] font-black text-center border" />
                          <span className="text-slate-300">→</span>
-                         <input type="number" value={d.maxQty} onChange={e => { const nd = [...appData.quantityDiscounts]; nd[idx].maxQty = Number(e.target.value); updateData('quantityDiscounts', nd); }} className="w-12 bg-white rounded p-1 text-[9px] font-black text-center border" />
-                         <div className="flex-1 text-right font-black text-emerald-600 text-xs"><input type="number" value={d.discountPercent} onChange={e => { const nd = [...appData.quantityDiscounts]; nd[idx].discountPercent = Number(e.target.value); updateData('quantityDiscounts', nd); }} className="w-10 bg-transparent text-right outline-none" />%</div>
+                         <input type="number" value={d.maxQty} onChange={e => { 
+                            const nd = [...appData.quantityDiscounts]; 
+                            nd[idx].maxQty = Number(e.target.value); 
+                            updateData('quantityDiscounts', nd); 
+                            upsertDiscountCloud(nd[idx]);
+                         }} className="w-12 bg-white rounded p-1 text-[9px] font-black text-center border" />
+                         <div className="flex-1 text-right font-black text-emerald-600 text-xs"><input type="number" value={d.discountPercent} onChange={e => { 
+                            const nd = [...appData.quantityDiscounts]; 
+                            nd[idx].discountPercent = Number(e.target.value); 
+                            updateData('quantityDiscounts', nd); 
+                            upsertDiscountCloud(nd[idx]);
+                         }} className="w-10 bg-transparent text-right outline-none" />%</div>
                          <button onClick={() => deleteDiscount(d.id)} className="text-slate-200 hover:text-rose-500 transition-all"><TrashIcon size={14}/></button>
                       </div>
                     ))}
