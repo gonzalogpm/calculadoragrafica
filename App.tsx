@@ -34,7 +34,8 @@ import {
   PartyPopperIcon,
   CloudUploadIcon,
   RefreshCwIcon,
-  TrendingUpIcon
+  TrendingUpIcon,
+  ClipboardListIcon
 } from 'lucide-react';
 import { 
   DesignItem, 
@@ -50,7 +51,7 @@ import {
 import { packDesigns } from './utils/layout';
 import { supabase } from './supabaseClient';
 
-const MASTER_KEY = 'graficapro_enterprise_v13';
+const MASTER_KEY = 'graficapro_enterprise_v13_detalles';
 
 const generateUUID = () => {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -133,7 +134,8 @@ const App: React.FC = () => {
     height: 0,
     quantity: 1,
     category_id: '',
-    deposit: 0
+    deposit: 0,
+    details: ''
   });
 
   const ensureISO = (val: any): string => {
@@ -257,6 +259,7 @@ const App: React.FC = () => {
           balance: o.balance,
           status_id: o.status_id,
           created_at: ensureISO(o.created_at),
+          details: o.details || '',
           user_id: session.user.id
         }));
         await supabase.from('orders').upsert(ordsToUpload);
@@ -388,13 +391,13 @@ const App: React.FC = () => {
     const dep = orderForm.deposit || 0;
     const order: Order = editingOrder ? { ...editingOrder, ...orderForm, total_price: total, balance: total - dep } as Order : { ...orderForm, id: generateUUID(), total_price: total, balance: total - dep, created_at: new Date().toISOString() } as Order;
     updateData('orders', editingOrder ? appData.orders.map(o => o.id === order.id ? order : o) : [...appData.orders, order]);
-    if (supabase && session?.user) await supabase.from('orders').upsert({ ...order, id: toSafeUUID(order.id), client_id: toSafeUUID(order.client_id), category_id: toSafeUUID(order.category_id), user_id: session.user.id });
+    if (supabase && session?.user) await supabase.from('orders').upsert({ ...order, id: toSafeUUID(order.id), client_id: toSafeUUID(order.client_id), category_id: toSafeUUID(order.category_id), user_id: session.user.id, details: order.details || '' });
     setIsOrderModalOpen(false);
   };
 
   const handleNewOrder = () => {
     setEditingOrder(null);
-    setOrderForm({ order_number: String(appData.orders.length + 1).padStart(4, '0'), status_id: 'hacer', client_id: '', width: 0, height: 0, quantity: 1, category_id: '', deposit: 0 });
+    setOrderForm({ order_number: String(appData.orders.length + 1).padStart(4, '0'), status_id: 'hacer', client_id: '', width: 0, height: 0, quantity: 1, category_id: '', deposit: 0, details: '' });
     setIsOrderModalOpen(true);
   };
 
@@ -679,7 +682,7 @@ const App: React.FC = () => {
                      <div key={o.id} className="bg-white rounded-[2rem] p-5 lg:p-6 border shadow-sm flex flex-col gap-5 lg:gap-6 group overflow-hidden">
                         <div className="flex items-center gap-4 lg:gap-5 w-full">
                            <div className={`w-12 h-12 lg:w-14 lg:h-14 rounded-2xl ${s?.color} text-white flex flex-col items-center justify-center font-black text-[8px] lg:text-[9px] shrink-0`}><span className="opacity-60 uppercase">Nº</span><span className="text-xs lg:text-sm">#{o.order_number}</span></div>
-                           <div className="min-w-0">
+                           <div className="min-w-0 flex-1">
                               <div className="font-black text-slate-900 uppercase text-xs lg:text-sm truncate">{c?.name || 'DESCONOCIDO'}</div>
                               <div className="text-[9px] font-bold text-slate-400 uppercase flex flex-wrap items-center gap-1.5 mt-1">
                                 <span className={`px-2 py-0.5 rounded-full text-white ${s?.color} text-[8px]`}>{s?.name}</span>
@@ -689,6 +692,15 @@ const App: React.FC = () => {
                               </div>
                            </div>
                         </div>
+
+                        {o.details && (
+                          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                             <div className="flex items-center gap-2 text-indigo-500 font-black text-[9px] uppercase mb-1.5">
+                                <ClipboardListIcon size={12}/> Detalles adicionales
+                             </div>
+                             <p className="text-slate-600 text-[11px] font-medium leading-relaxed whitespace-pre-wrap">{o.details}</p>
+                          </div>
+                        )}
                         
                         <div className="flex flex-wrap items-center justify-between gap-4 pt-4 border-t border-slate-50">
                            <div className="flex items-center gap-4 lg:gap-8 overflow-x-auto no-scrollbar-mobile flex-1">
@@ -864,6 +876,10 @@ const App: React.FC = () => {
                     </select></div>
                     <div className="space-y-1"><label className="text-[8px] font-black text-slate-400 uppercase ml-1">Seña $</label><input type="number" value={orderForm.deposit || ''} onChange={e => setOrderForm({...orderForm, deposit: Number(e.target.value)})} className="w-full bg-emerald-50 p-3 rounded-xl font-black text-emerald-700 border-none" /></div>
                  </div>
+                 <div className="space-y-1">
+                    <label className="text-[8px] font-black text-slate-400 uppercase ml-1">Detalles (Comentarios)</label>
+                    <textarea value={orderForm.details || ''} onChange={e => setOrderForm({...orderForm, details: e.target.value})} className="w-full bg-slate-50 p-3 rounded-xl font-bold border-none text-xs h-24 resize-none" placeholder="Escribe detalles adicionales aquí..."></textarea>
+                 </div>
                  <div className="pt-4 flex gap-3"><button onClick={() => setIsOrderModalOpen(false)} className="flex-1 font-black text-slate-400 uppercase text-xs">Cerrar</button><button onClick={saveOrder} className="flex-[2] bg-indigo-600 text-white font-black py-4 rounded-xl shadow-lg hover:bg-indigo-700 active:scale-95 transition-all uppercase text-[10px]">Guardar</button></div>
               </div>
            </div>
@@ -882,6 +898,12 @@ const App: React.FC = () => {
                  <div className="flex justify-between gap-4"><span>Tipo:</span><span className="text-slate-900">{appData.categories.find(c => c.id === showSummary.category_id)?.name}</span></div>
                  <div className="flex justify-between gap-4"><span>Medidas:</span><span className="text-slate-900">{showSummary.width}x{showSummary.height} CM</span></div>
                  <div className="flex justify-between gap-4"><span>Cantidad:</span><span className="text-slate-900">{showSummary.quantity} u.</span></div>
+                 {showSummary.details && (
+                   <div className="pt-2 border-t mt-1">
+                      <span className="block mb-1 text-slate-400">Detalles:</span>
+                      <span className="text-slate-700 lowercase first-letter:uppercase">{showSummary.details}</span>
+                   </div>
+                 )}
                  <div className="flex justify-between pt-2 border-t gap-4 mt-1"><span className="text-indigo-600 font-black">Total:</span><span className="text-indigo-600 text-base font-black">${showSummary.total_price.toLocaleString()}</span></div>
                  <div className="flex justify-between text-emerald-600 gap-4"><span>Seña:</span><span>${showSummary.deposit.toLocaleString()}</span></div>
                  <div className="flex justify-between text-rose-500 font-black gap-4"><span>Saldo:</span><span>${showSummary.balance.toLocaleString()}</span></div>
@@ -889,10 +911,11 @@ const App: React.FC = () => {
               <button onClick={() => {
                 const c = appData.clients.find(cl => cl.id === showSummary.client_id);
                 const cat = appData.categories.find(cat => cat.id === showSummary.category_id);
+                const detailsText = showSummary.details ? `\n*Detalles:* ${showSummary.details}` : '';
                 const text = `*CreaStickers - Ticket #${showSummary.order_number}*\n\n` +
                              `*Cliente:* ${c?.name}\n` +
                              `*Detalle:* ${cat?.name} (${showSummary.width}x${showSummary.height}cm)\n` +
-                             `*Cantidad:* ${showSummary.quantity} unidades\n\n` +
+                             `*Cantidad:* ${showSummary.quantity} unidades${detailsText}\n\n` +
                              `*Total:* $${showSummary.total_price.toLocaleString()}\n` +
                              `*Seña:* $${showSummary.deposit.toLocaleString()}\n` +
                              `*Saldo:* $${showSummary.balance.toLocaleString()}`;
