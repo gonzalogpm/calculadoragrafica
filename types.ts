@@ -68,4 +68,5 @@ export interface Order {
   balance: number; // Restante
   status_id: string;
   created_at: string;
+  details?: string;
 }
