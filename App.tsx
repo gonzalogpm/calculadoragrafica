@@ -50,7 +50,7 @@ import {
 import { packDesigns } from './utils/layout';
 import { supabase } from './supabaseClient';
 
-const MASTER_KEY = 'graficapro_enterprise_v11';
+const MASTER_KEY = 'graficapro_enterprise_v12';
 
 const generateUUID = () => {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -151,6 +151,8 @@ const App: React.FC = () => {
           if (parsed.clients) parsed.clients = parsed.clients.map((c: any) => ({ ...c, id: toSafeUUID(c.id), created_at: ensureISO(c.created_at) }));
           if (parsed.orders) parsed.orders = parsed.orders.map((o: any) => ({ ...o, id: toSafeUUID(o.id), client_id: toSafeUUID(o.client_id), category_id: toSafeUUID(o.category_id), created_at: ensureISO(o.created_at) }));
           if (parsed.categories) parsed.categories = parsed.categories.map((cat: any) => ({ ...cat, id: toSafeUUID(cat.id) }));
+          if (parsed.costTiers) parsed.costTiers = parsed.costTiers.map((t: any) => ({ ...t, id: toSafeUUID(t.id) }));
+          if (parsed.quantityDiscounts) parsed.quantityDiscounts = parsed.quantityDiscounts.map((d: any) => ({ ...d, id: toSafeUUID(d.id) }));
           setAppData(prev => ({ ...prev, ...parsed }));
         } catch (e) { }
       }
@@ -175,11 +177,13 @@ const App: React.FC = () => {
   const fetchCloudData = async (userId: string) => {
     if (!supabase) return;
     try {
-      const [{ data: setts }, { data: cls }, { data: ords }, { data: cats }] = await Promise.all([
+      const [{ data: setts }, { data: cls }, { data: ords }, { data: cats }, { data: tiers }, { data: discs }] = await Promise.all([
         supabase.from('settings').select('*').eq('user_id', userId).maybeSingle(),
         supabase.from('clients').select('*').eq('user_id', userId),
         supabase.from('orders').select('*').eq('user_id', userId),
-        supabase.from('categories').select('*').eq('user_id', userId)
+        supabase.from('categories').select('*').eq('user_id', userId),
+        supabase.from('cost_tiers').select('*').eq('user_id', userId),
+        supabase.from('quantity_discounts').select('*').eq('user_id', userId)
       ]);
       setAppData(prev => ({
         ...prev,
@@ -188,7 +192,9 @@ const App: React.FC = () => {
         designSpacing: Number(setts?.design_spacing) || prev.designSpacing,
         clients: (cls && cls.length > 0) ? cls : prev.clients,
         orders: (ords && ords.length > 0) ? ords : prev.orders,
-        categories: (cats && cats.length > 0) ? cats.map((c: any) => ({ ...c, id: toSafeUUID(c.id), pricePerUnit: c.price_per_unit || c.pricePerUnit })) : prev.categories
+        categories: (cats && cats.length > 0) ? cats.map((c: any) => ({ ...c, id: toSafeUUID(c.id), pricePerUnit: c.price_per_unit ?? c.pricePerUnit })) : prev.categories,
+        costTiers: (tiers && tiers.length > 0) ? tiers.map((t: any) => ({ ...t, id: toSafeUUID(t.id), minLargo: t.min_largo ?? t.minLargo, maxLargo: t.max_largo ?? t.maxLargo, precioPorCm: t.precio_por_cm ?? t.precioPorCm })) : prev.costTiers,
+        quantityDiscounts: (discs && discs.length > 0) ? discs.map((d: any) => ({ ...d, id: toSafeUUID(d.id), minQty: d.min_qty ?? d.minQty, maxQty: d.max_qty ?? d.maxQty, discountPercent: d.discount_percent ?? d.discountPercent })) : prev.quantityDiscounts,
       }));
     } catch (e) { }
   };
@@ -205,6 +211,26 @@ const App: React.FC = () => {
           user_id: session.user.id
         }));
         await supabase.from('categories').upsert(catsToUpload);
+      }
+      if (appData.costTiers.length > 0) {
+        const tiersToUpload = appData.costTiers.map(t => ({
+          id: toSafeUUID(t.id),
+          min_largo: t.minLargo,
+          max_largo: t.maxLargo,
+          precio_por_cm: t.precioPorCm,
+          user_id: session.user.id
+        }));
+        await supabase.from('cost_tiers').upsert(tiersToUpload);
+      }
+      if (appData.quantityDiscounts.length > 0) {
+        const discsToUpload = appData.quantityDiscounts.map(d => ({
+          id: toSafeUUID(d.id),
+          min_qty: d.minQty,
+          max_qty: d.maxQty,
+          discount_percent: d.discountPercent,
+          user_id: session.user.id
+        }));
+        await supabase.from('quantity_discounts').upsert(discsToUpload);
       }
       if (appData.clients.length > 0) {
         const clsToUpload = appData.clients.map(c => ({
@@ -383,6 +409,30 @@ const App: React.FC = () => {
     }
   };
 
+  const syncTierToCloud = async (tier: CostTier) => {
+    if (supabase && session?.user) {
+      await supabase.from('cost_tiers').upsert({
+        id: toSafeUUID(tier.id),
+        min_largo: tier.minLargo,
+        max_largo: tier.maxLargo,
+        precio_por_cm: tier.precioPorCm,
+        user_id: session.user.id
+      });
+    }
+  };
+
+  const syncDiscountToCloud = async (disc: QuantityDiscount) => {
+    if (supabase && session?.user) {
+      await supabase.from('quantity_discounts').upsert({
+        id: toSafeUUID(disc.id),
+        min_qty: disc.minQty,
+        max_qty: disc.maxQty,
+        discount_percent: disc.discountPercent,
+        user_id: session.user.id
+      });
+    }
+  };
+
   const handleAddCategory = () => {
     const newCat = { id: generateUUID(), name: 'NUEVA', pricePerUnit: 0 };
     updateData('categories', [...appData.categories, newCat]);
@@ -400,6 +450,46 @@ const App: React.FC = () => {
     updateData('categories', appData.categories.filter(c => c.id !== id));
     if (supabase && session?.user) {
       await supabase.from('categories').delete().eq('id', toSafeUUID(id));
+    }
+  };
+
+  const handleAddTier = () => {
+    const newTier = { id: generateUUID(), minLargo: 0, maxLargo: 0, precioPorCm: 0 };
+    updateData('costTiers', [...appData.costTiers, newTier]);
+    syncTierToCloud(newTier);
+  };
+
+  const handleUpdateTier = (idx: number, updates: Partial<CostTier>) => {
+    const nt = [...appData.costTiers];
+    nt[idx] = { ...nt[idx], ...updates };
+    updateData('costTiers', nt);
+    syncTierToCloud(nt[idx]);
+  };
+
+  const handleDeleteTier = async (id: string) => {
+    updateData('costTiers', appData.costTiers.filter(t => t.id !== id));
+    if (supabase && session?.user) {
+      await supabase.from('cost_tiers').delete().eq('id', toSafeUUID(id));
+    }
+  };
+
+  const handleAddDiscount = () => {
+    const newDisc = { id: generateUUID(), minQty: 0, maxQty: 0, discountPercent: 0 };
+    updateData('quantityDiscounts', [...appData.quantityDiscounts, newDisc]);
+    syncDiscountToCloud(newDisc);
+  };
+
+  const handleUpdateDiscount = (idx: number, updates: Partial<QuantityDiscount>) => {
+    const nd = [...appData.quantityDiscounts];
+    nd[idx] = { ...nd[idx], ...updates };
+    updateData('quantityDiscounts', nd);
+    syncDiscountToCloud(nd[idx]);
+  };
+
+  const handleDeleteDiscount = async (id: string) => {
+    updateData('quantityDiscounts', appData.quantityDiscounts.filter(d => d.id !== id));
+    if (supabase && session?.user) {
+      await supabase.from('quantity_discounts').delete().eq('id', toSafeUUID(id));
     }
   };
 
@@ -684,16 +774,16 @@ const App: React.FC = () => {
               <section className="bg-white rounded-[2rem] p-6 lg:p-8 border shadow-sm">
                  <div className="flex items-center justify-between mb-8">
                     <h2 className="text-slate-900 font-black text-[10px] uppercase tracking-widest flex items-center gap-2"><LayersIcon size={16}/> Tarifas por Largo</h2>
-                    <button onClick={() => updateData('costTiers', [...appData.costTiers, { id: generateUUID(), minLargo: 0, maxLargo: 0, precioPorCm: 0 }])} className="p-2 bg-indigo-50 text-indigo-600 rounded-lg transition-all"><PlusIcon size={16}/></button>
+                    <button onClick={handleAddTier} className="p-2 bg-indigo-50 text-indigo-600 rounded-lg transition-all"><PlusIcon size={16}/></button>
                  </div>
                  <div className="space-y-4">
                     {appData.costTiers.map((tier, idx) => (
                       <div key={tier.id} className="flex gap-2 items-center bg-slate-50 p-3 rounded-xl border group overflow-hidden">
-                         <input type="number" value={tier.minLargo} onChange={e => { const nt = [...appData.costTiers]; nt[idx].minLargo = Number(e.target.value); updateData('costTiers', nt); }} className="w-8 lg:w-10 bg-white rounded p-1 text-[9px] font-black text-center shrink-0" />
+                         <input type="number" value={tier.minLargo} onChange={e => handleUpdateTier(idx, { minLargo: Number(e.target.value) })} className="w-8 lg:w-10 bg-white rounded p-1 text-[9px] font-black text-center shrink-0" />
                          <span className="text-slate-300 text-[10px] shrink-0">→</span>
-                         <input type="number" value={tier.maxLargo} onChange={e => { const nt = [...appData.costTiers]; nt[idx].maxLargo = Number(e.target.value); updateData('costTiers', nt); }} className="w-8 lg:w-10 bg-white rounded p-1 text-[9px] font-black text-center shrink-0" />
-                         <div className="flex-1 text-right font-black text-indigo-600 text-[10px] lg:text-xs shrink-0 truncate">$ <input type="number" value={tier.precioPorCm} onChange={e => { const nt = [...appData.costTiers]; nt[idx].precioPorCm = Number(e.target.value); updateData('costTiers', nt); }} className="w-12 lg:w-14 bg-transparent text-right outline-none" /></div>
-                         <button onClick={() => updateData('costTiers', appData.costTiers.filter(t => t.id !== tier.id))} className="text-slate-200 hover:text-rose-500 transition-all shrink-0"><TrashIcon size={14}/></button>
+                         <input type="number" value={tier.maxLargo} onChange={e => handleUpdateTier(idx, { maxLargo: Number(e.target.value) })} className="w-8 lg:w-10 bg-white rounded p-1 text-[9px] font-black text-center shrink-0" />
+                         <div className="flex-1 text-right font-black text-indigo-600 text-[10px] lg:text-xs shrink-0 truncate">$ <input type="number" value={tier.precioPorCm} onChange={e => handleUpdateTier(idx, { precioPorCm: Number(e.target.value) })} className="w-12 lg:w-14 bg-transparent text-right outline-none" /></div>
+                         <button onClick={() => handleDeleteTier(tier.id)} className="text-slate-200 hover:text-rose-500 transition-all shrink-0"><TrashIcon size={14}/></button>
                       </div>
                     ))}
                  </div>
@@ -701,16 +791,16 @@ const App: React.FC = () => {
               <section className="bg-white rounded-[2rem] p-6 lg:p-8 border shadow-sm">
                  <div className="flex items-center justify-between mb-8">
                     <h2 className="text-slate-900 font-black text-[10px] uppercase tracking-widest flex items-center gap-2"><PercentIcon size={16}/> Descuentos Qty</h2>
-                    <button onClick={() => updateData('quantityDiscounts', [...appData.quantityDiscounts, { id: generateUUID(), minQty: 0, maxQty: 0, discountPercent: 0 }])} className="p-2 bg-indigo-50 text-indigo-600 rounded-lg transition-all"><PlusIcon size={16}/></button>
+                    <button onClick={handleAddDiscount} className="p-2 bg-indigo-50 text-indigo-600 rounded-lg transition-all"><PlusIcon size={16}/></button>
                  </div>
                  <div className="space-y-4">
                     {appData.quantityDiscounts.map((disc, idx) => (
                       <div key={disc.id} className="flex gap-2 items-center bg-slate-50 p-3 rounded-xl border group overflow-hidden">
-                         <input type="number" value={disc.minQty} onChange={e => { const nd = [...appData.quantityDiscounts]; nd[idx].minQty = Number(e.target.value); updateData('quantityDiscounts', nd); }} className="w-8 lg:w-10 bg-white rounded p-1 text-[9px] font-black text-center shrink-0" />
+                         <input type="number" value={disc.minQty} onChange={e => handleUpdateDiscount(idx, { minQty: Number(e.target.value) })} className="w-8 lg:w-10 bg-white rounded p-1 text-[9px] font-black text-center shrink-0" />
                          <span className="text-slate-300 text-[10px] shrink-0">→</span>
-                         <input type="number" value={disc.maxQty} onChange={e => { const nd = [...appData.quantityDiscounts]; nd[idx].maxQty = Number(e.target.value); updateData('quantityDiscounts', nd); }} className="w-8 lg:w-10 bg-white rounded p-1 text-[9px] font-black text-center shrink-0" />
-                         <div className="flex-1 text-right font-black text-emerald-600 text-[10px] lg:text-xs shrink-0 truncate"><input type="number" value={disc.discountPercent} onChange={e => { const nd = [...appData.quantityDiscounts]; nd[idx].discountPercent = Number(e.target.value); updateData('quantityDiscounts', nd); }} className="w-8 bg-transparent text-right outline-none" />%</div>
-                         <button onClick={() => updateData('quantityDiscounts', appData.quantityDiscounts.filter(d => d.id !== disc.id))} className="text-slate-200 hover:text-rose-500 transition-all shrink-0"><TrashIcon size={14}/></button>
+                         <input type="number" value={disc.maxQty} onChange={e => handleUpdateDiscount(idx, { maxQty: Number(e.target.value) })} className="w-8 lg:w-10 bg-white rounded p-1 text-[9px] font-black text-center shrink-0" />
+                         <div className="flex-1 text-right font-black text-emerald-600 text-[10px] lg:text-xs shrink-0 truncate"><input type="number" value={disc.discountPercent} onChange={e => handleUpdateDiscount(idx, { discountPercent: Number(e.target.value) })} className="w-8 bg-transparent text-right outline-none" />%</div>
+                         <button onClick={() => handleDeleteDiscount(disc.id)} className="text-slate-200 hover:text-rose-500 transition-all shrink-0"><TrashIcon size={14}/></button>
                       </div>
                     ))}
                  </div>
