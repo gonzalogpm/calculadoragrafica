@@ -50,7 +50,7 @@ import {
 import { packDesigns } from './utils/layout';
 import { supabase } from './supabaseClient';
 
-const MASTER_KEY = 'graficapro_enterprise_v12';
+const MASTER_KEY = 'graficapro_enterprise_v13';
 
 const generateUUID = () => {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -182,8 +182,8 @@ const App: React.FC = () => {
         supabase.from('clients').select('*').eq('user_id', userId),
         supabase.from('orders').select('*').eq('user_id', userId),
         supabase.from('categories').select('*').eq('user_id', userId),
-        supabase.from('cost_tiers').select('*').eq('user_id', userId),
-        supabase.from('quantity_discounts').select('*').eq('user_id', userId)
+        supabase.from('cost_tiers').select('*').eq('user_id', userId).order('min_largo', { ascending: true }),
+        supabase.from('quantity_discounts').select('*').eq('user_id', userId).order('min_qty', { ascending: true })
       ]);
       setAppData(prev => ({
         ...prev,
@@ -192,9 +192,9 @@ const App: React.FC = () => {
         designSpacing: Number(setts?.design_spacing) || prev.designSpacing,
         clients: (cls && cls.length > 0) ? cls : prev.clients,
         orders: (ords && ords.length > 0) ? ords : prev.orders,
-        categories: (cats && cats.length > 0) ? cats.map((c: any) => ({ ...c, id: toSafeUUID(c.id), pricePerUnit: c.price_per_unit ?? c.pricePerUnit })) : prev.categories,
-        costTiers: (tiers && tiers.length > 0) ? tiers.map((t: any) => ({ ...t, id: toSafeUUID(t.id), minLargo: t.min_largo ?? t.minLargo, maxLargo: t.max_largo ?? t.maxLargo, precioPorCm: t.precio_por_cm ?? t.precioPorCm })) : prev.costTiers,
-        quantityDiscounts: (discs && discs.length > 0) ? discs.map((d: any) => ({ ...d, id: toSafeUUID(d.id), minQty: d.min_qty ?? d.minQty, maxQty: d.max_qty ?? d.maxQty, discountPercent: d.discount_percent ?? d.discountPercent })) : prev.quantityDiscounts,
+        categories: (cats && cats.length > 0) ? cats.map((c: any) => ({ id: toSafeUUID(c.id), name: c.name, pricePerUnit: Number(c.price_per_unit || 0) })) : prev.categories,
+        costTiers: (tiers && tiers.length > 0) ? tiers.map((t: any) => ({ id: toSafeUUID(t.id), minLargo: Number(t.min_largo || 0), maxLargo: Number(t.max_largo || 0), precioPorCm: Number(t.precio_por_cm || 0) })) : prev.costTiers,
+        quantityDiscounts: (discs && discs.length > 0) ? discs.map((d: any) => ({ id: toSafeUUID(d.id), minQty: Number(d.min_qty || 0), maxQty: Number(d.max_qty || 0), discountPercent: Number(d.discount_percent || 0) })) : prev.quantityDiscounts,
       }));
     } catch (e) { }
   };
