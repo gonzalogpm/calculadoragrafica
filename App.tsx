@@ -51,7 +51,7 @@ import {
 import { packDesigns } from './utils/layout';
 import { supabase } from './supabaseClient';
 
-const MASTER_KEY = 'graficapro_enterprise_v13_detalles';
+const MASTER_KEY = 'graficapro_enterprise_v13_detalles_fix';
 
 const generateUUID = () => {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -151,7 +151,7 @@ const App: React.FC = () => {
         try {
           let parsed = JSON.parse(saved);
           if (parsed.clients) parsed.clients = parsed.clients.map((c: any) => ({ ...c, id: toSafeUUID(c.id), created_at: ensureISO(c.created_at) }));
-          if (parsed.orders) parsed.orders = parsed.orders.map((o: any) => ({ ...o, id: toSafeUUID(o.id), client_id: toSafeUUID(o.client_id), category_id: toSafeUUID(o.category_id), created_at: ensureISO(o.created_at) }));
+          if (parsed.orders) parsed.orders = parsed.orders.map((o: any) => ({ ...o, id: toSafeUUID(o.id), client_id: toSafeUUID(o.client_id), category_id: o.category_id ? toSafeUUID(o.category_id) : null, created_at: ensureISO(o.created_at) }));
           if (parsed.categories) parsed.categories = parsed.categories.map((cat: any) => ({ ...cat, id: toSafeUUID(cat.id) }));
           if (parsed.costTiers) parsed.costTiers = parsed.costTiers.map((t: any) => ({ ...t, id: toSafeUUID(t.id) }));
           if (parsed.quantityDiscounts) parsed.quantityDiscounts = parsed.quantityDiscounts.map((d: any) => ({ ...d, id: toSafeUUID(d.id) }));
@@ -250,7 +250,7 @@ const App: React.FC = () => {
           id: toSafeUUID(o.id),
           order_number: o.order_number,
           client_id: toSafeUUID(o.client_id),
-          category_id: toSafeUUID(o.category_id),
+          category_id: o.category_id ? toSafeUUID(o.category_id) : null,
           width: o.width,
           height: o.height,
           quantity: o.quantity,
@@ -389,9 +389,37 @@ const App: React.FC = () => {
     const cat = appData.categories.find(c => c.id === orderForm.category_id);
     const total = (cat?.pricePerUnit || 0) * (orderForm.quantity || 0);
     const dep = orderForm.deposit || 0;
-    const order: Order = editingOrder ? { ...editingOrder, ...orderForm, total_price: total, balance: total - dep } as Order : { ...orderForm, id: generateUUID(), total_price: total, balance: total - dep, created_at: new Date().toISOString() } as Order;
+    
+    // Crear el objeto de pedido completo
+    const order: Order = editingOrder 
+      ? { ...editingOrder, ...orderForm, total_price: total, balance: total - dep } as Order 
+      : { ...orderForm, id: generateUUID(), total_price: total, balance: total - dep, created_at: new Date().toISOString() } as Order;
+
+    // Actualizar estado local
     updateData('orders', editingOrder ? appData.orders.map(o => o.id === order.id ? order : o) : [...appData.orders, order]);
-    if (supabase && session?.user) await supabase.from('orders').upsert({ ...order, id: toSafeUUID(order.id), client_id: toSafeUUID(order.client_id), category_id: toSafeUUID(order.category_id), user_id: session.user.id, details: order.details || '' });
+    
+    // Sincronizar con Supabase si hay sesión
+    if (supabase && session?.user) {
+        const dataToUpsert = {
+          id: toSafeUUID(order.id),
+          order_number: order.order_number,
+          client_id: toSafeUUID(order.client_id),
+          category_id: order.category_id ? toSafeUUID(order.category_id) : null, // IMPORTANTE: Enviar null si no hay categoría
+          width: order.width,
+          height: order.height,
+          quantity: order.quantity,
+          total_price: order.total_price,
+          deposit: order.deposit,
+          balance: order.balance,
+          status_id: order.status_id,
+          created_at: ensureISO(order.created_at),
+          details: order.details || '',
+          user_id: session.user.id
+        };
+        const { error } = await supabase.from('orders').upsert(dataToUpsert);
+        if (error) console.error("Error al guardar en Supabase:", error.message);
+    }
+    
     setIsOrderModalOpen(false);
   };
 
