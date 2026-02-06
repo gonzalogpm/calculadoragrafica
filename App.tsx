@@ -444,16 +444,16 @@ const App: React.FC = () => {
         {activeTab === 'dash' && (
            <div className="space-y-6 lg:space-y-10">
               {session?.user && (
-                <div className="bg-indigo-600 rounded-[2rem] p-6 lg:p-10 flex flex-col md:flex-row items-center justify-between gap-6 text-white shadow-2xl">
+                <div className="bg-indigo-600 rounded-[2rem] p-4 lg:p-6 flex flex-col md:flex-row items-center justify-between gap-6 text-white shadow-2xl">
                    <div className="flex items-center gap-6">
-                      <div className="w-16 h-16 bg-white/20 rounded-3xl flex items-center justify-center shrink-0"><CloudUploadIcon size={24}/></div>
+                      <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center shrink-0"><CloudUploadIcon size={20}/></div>
                       <div>
-                         <h3 className="text-xl font-black uppercase mb-1">Nube Conectada</h3>
-                         <p className="text-indigo-100 text-xs font-bold opacity-80 uppercase">Tus pedidos están protegidos en la nube.</p>
+                         <h3 className="text-lg font-black uppercase mb-0.5">Nube Conectada</h3>
+                         <p className="text-indigo-100 text-[10px] font-bold opacity-80 uppercase">Tus pedidos están protegidos en la nube.</p>
                       </div>
                    </div>
-                   <button disabled={isMigrating} onClick={pushLocalDataToCloud} className="bg-white text-indigo-600 px-8 py-4 rounded-2xl font-black text-xs uppercase shadow-xl flex items-center gap-2">
-                     {isMigrating ? <Loader2Icon className="animate-spin" size={18}/> : <><RefreshCwIcon size={16}/> Forzar Sincro</>}
+                   <button disabled={isMigrating} onClick={pushLocalDataToCloud} className="bg-white text-indigo-600 px-6 py-3 rounded-xl font-black text-[10px] uppercase shadow-xl flex items-center gap-2">
+                     {isMigrating ? <Loader2Icon className="animate-spin" size={14}/> : <><RefreshCwIcon size={14}/> Forzar Sincro</>}
                    </button>
                 </div>
               )}
@@ -818,9 +818,9 @@ const App: React.FC = () => {
 
       {isOrderModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-           <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl max-h-[90vh] overflow-y-auto no-scrollbar-mobile">
+           <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl">
               <h2 className="text-xl font-black uppercase mb-6 flex items-center gap-3"><PackageIcon/> {editingOrder ? 'Editar' : 'Nuevo'} Pedido</h2>
-              <div className="space-y-5">
+              <div className="space-y-4">
                  <div className="grid grid-cols-2 gap-4">
                     <input type="text" value={orderForm.order_number} onChange={e => setOrderForm({...orderForm, order_number: e.target.value})} className="w-full bg-slate-50 p-4 rounded-xl font-black border-2 border-slate-200" placeholder="Nº Ticket" />
                     <select value={orderForm.status_id} onChange={e => setOrderForm({...orderForm, status_id: e.target.value})} className="w-full bg-slate-50 p-4 rounded-xl font-black border-2 border-slate-200">{appData.statuses.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
@@ -843,7 +843,7 @@ const App: React.FC = () => {
                  </div>
                  <div className="space-y-1">
                     <label className="text-[9px] font-black text-slate-400 uppercase ml-2">Detalles del Trabajo</label>
-                    <textarea value={orderForm.details || ''} onChange={e => setOrderForm({...orderForm, details: e.target.value})} className="w-full bg-slate-50 p-4 rounded-xl font-bold text-xs h-28 resize-none border-2 border-slate-200" placeholder="Escribe aquí las especificaciones..."></textarea>
+                    <textarea value={orderForm.details || ''} onChange={e => setOrderForm({...orderForm, details: e.target.value})} className="w-full bg-slate-50 p-4 rounded-xl font-bold text-xs h-24 resize-none border-2 border-slate-200" placeholder="Escribe aquí las especificaciones..."></textarea>
                  </div>
                  <div className="pt-4 flex gap-4"><button onClick={() => setIsOrderModalOpen(false)} className="flex-1 font-black text-slate-400 uppercase text-xs">Cerrar</button><button onClick={saveOrder} className="flex-[2] bg-indigo-600 text-white font-black py-4 rounded-xl shadow-lg uppercase text-[10px] hover:bg-indigo-700 transition-all">Confirmar Pedido</button></div>
               </div>
@@ -868,10 +868,10 @@ const App: React.FC = () => {
               </div>
               <button onClick={() => {
                 const c = appData.clients.find(cl => cl.id === showSummary.client_id);
+                // Se eliminó el campo de detalles adicionales del mensaje de WhatsApp según solicitud
                 const text = `*Ticket #${showSummary.order_number}*\n\n` +
                              `*Cliente:* ${c?.name}\n` +
                              `*Medida:* ${showSummary.width}x${showSummary.height}cm (${showSummary.quantity}u)\n` +
-                             (showSummary.details ? `*Notas:* ${showSummary.details}\n` : '') +
                              `*Total:* $${showSummary.total_price.toLocaleString()}\n` +
                              `*Seña:* $${showSummary.deposit.toLocaleString()}\n` +
                              `*Saldo:* $${showSummary.balance.toLocaleString()}`;
