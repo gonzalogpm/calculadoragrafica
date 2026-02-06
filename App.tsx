@@ -40,7 +40,7 @@ import {
 import { packDesigns } from './utils/layout';
 import { supabase } from './supabaseClient';
 
-const MASTER_KEY = 'graficapro_enterprise_v15_final';
+const MASTER_KEY = 'graficapro_enterprise_v16_final';
 
 // Helpers para IDs y UUIDs
 const generateUUID = () => {
@@ -52,9 +52,10 @@ const generateUUID = () => {
 };
 
 const toSafeUUID = (id: string | undefined) => {
-  if (!id) return generateUUID();
+  if (!id || id === "") return generateUUID();
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   if (uuidRegex.test(id)) return id;
+  // Convertir IDs cortos ("1", "2") a UUIDs deterministas para evitar conflictos de integridad
   const numeric = id.replace(/\D/g, '').padStart(12, '0').slice(-12);
   return `00000000-0000-0000-0000-${numeric}`;
 };
@@ -123,16 +124,17 @@ const App: React.FC = () => {
     return String(val).length < 10 ? new Date().toISOString() : val;
   };
 
-  // Función núcleo de actualización de estado y persistencia local
+  // Función núcleo de actualización de estado y persistencia local inmediata
   const updateData = useCallback((field: keyof AppDataType, value: any) => {
     setAppData(prev => {
         const newData = { ...prev, [field]: value };
+        // Guardado persistente inmediato en LocalStorage
         localStorage.setItem(MASTER_KEY, JSON.stringify(newData));
         return newData;
     });
   }, []);
 
-  // Función para sincronizar settings individuales
+  // Función para sincronizar settings individuales a la nube
   const syncSettingsToCloud = async (newData: Partial<AppDataType>) => {
     if (!supabase || !session?.user) return;
     try {
@@ -142,25 +144,29 @@ const App: React.FC = () => {
         profit_margin: newData.profitMargin ?? appData.profitMargin, 
         design_spacing: newData.designSpacing ?? appData.designSpacing 
       });
-    } catch (e) { console.error("Error al sincronizar ajustes:", e); }
+    } catch (e) { console.error("Error sincronizando ajustes:", e); }
   };
 
-  // Inicialización y carga de datos
+  // Carga inicial y listeners de sesión
   useEffect(() => {
     const init = async () => {
+      // 1. Cargar desde LocalStorage para respuesta inmediata del UI
       const saved = localStorage.getItem(MASTER_KEY);
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
           setAppData(prev => ({ ...prev, ...parsed }));
-        } catch (e) {}
+        } catch (e) { console.error("Error parseando localStorage"); }
       }
+      
       if (!supabase) { setLoading(false); return; }
+
+      // 2. Obtener sesión y cargar desde la nube si existe
       try {
         const { data: { session: cur } } = await supabase.auth.getSession();
         setSession(cur);
         if (cur?.user) await fetchCloudData(cur.user.id);
-      } catch (e) {}
+      } catch (e) { console.error("Error de sesión inicial:", e); }
       setLoading(false);
     };
     init();
@@ -186,18 +192,25 @@ const App: React.FC = () => {
         supabase.from('quantity_discounts').select('*').eq('user_id', userId).order('min_qty', { ascending: true })
       ]);
 
+      // Si no hay categorías en la nube, es un usuario nuevo: empujar las predeterminadas
+      if (cats.data && cats.data.length === 0) {
+        await supabase.from('categories').upsert(DEFAULT_CATEGORIES.map(c => ({
+          id: c.id, name: c.name, price_per_unit: c.pricePerUnit, user_id: userId
+        })));
+      }
+
       setAppData(prev => ({
         ...prev,
         sheetWidth: setts.data ? Number(setts.data.sheet_width) : prev.sheetWidth,
         profitMargin: setts.data ? Number(setts.data.profit_margin) : prev.profitMargin,
         designSpacing: setts.data ? Number(setts.data.design_spacing) : prev.designSpacing,
-        clients: cls.data || prev.clients,
-        orders: ords.data || prev.orders,
+        clients: (cls.data && cls.data.length > 0) ? cls.data : prev.clients,
+        orders: (ords.data && ords.data.length > 0) ? ords.data : prev.orders,
         categories: (cats.data && cats.data.length > 0) ? cats.data.map((c: any) => ({ id: c.id, name: c.name, pricePerUnit: Number(c.price_per_unit || 0) })) : prev.categories,
-        costTiers: (tiers.data || []).map((t: any) => ({ id: t.id, minLargo: Number(t.min_largo || 0), maxLargo: Number(t.max_largo || 0), precioPorCm: Number(t.precio_por_cm || 0) })),
-        quantityDiscounts: (discs.data || []).map((d: any) => ({ id: d.id, minQty: Number(d.min_qty || 0), maxQty: Number(d.max_qty || 0), discountPercent: Number(d.discount_percent || 0) })),
+        costTiers: (tiers.data && tiers.data.length > 0) ? tiers.data.map((t: any) => ({ id: t.id, minLargo: Number(t.min_largo || 0), maxLargo: Number(t.max_largo || 0), precioPorCm: Number(t.precio_por_cm || 0) })) : prev.costTiers,
+        quantityDiscounts: (discs.data && discs.data.length > 0) ? discs.data.map((d: any) => ({ id: d.id, minQty: Number(d.min_qty || 0), maxQty: Number(d.max_qty || 0), discountPercent: Number(d.discount_percent || 0) })) : prev.quantityDiscounts,
       }));
-    } catch (e) {}
+    } catch (e) { console.error("Error al descargar datos de la nube:", e); }
   };
 
   const pushLocalDataToCloud = async () => {
@@ -205,10 +218,11 @@ const App: React.FC = () => {
     setIsMigrating(true);
     try {
       const userId = session.user.id;
-      // Sincronizar por partes para evitar errores de integridad
+      // Sincronización masiva robusta
       await Promise.all([
         appData.categories.length > 0 ? supabase.from('categories').upsert(appData.categories.map(c => ({ id: toSafeUUID(c.id), name: c.name, price_per_unit: c.pricePerUnit, user_id: userId }))) : Promise.resolve(),
         appData.clients.length > 0 ? supabase.from('clients').upsert(appData.clients.map(c => ({ id: toSafeUUID(c.id), name: c.name, phone: c.phone, address: c.address, user_id: userId, created_at: ensureISO(c.created_at) }))) : Promise.resolve(),
+        // Fix: Use t.maxLargo instead of t.max_largo when mapping from local CostTier object
         appData.costTiers.length > 0 ? supabase.from('cost_tiers').upsert(appData.costTiers.map(t => ({ id: toSafeUUID(t.id), min_largo: t.minLargo, max_largo: t.maxLargo, precio_por_cm: t.precioPorCm, user_id: userId }))) : Promise.resolve(),
         appData.quantityDiscounts.length > 0 ? supabase.from('quantity_discounts').upsert(appData.quantityDiscounts.map(d => ({ id: toSafeUUID(d.id), min_qty: d.minQty, max_qty: d.maxQty, discount_percent: d.discountPercent, user_id: userId }))) : Promise.resolve()
       ]);
@@ -225,17 +239,23 @@ const App: React.FC = () => {
 
       await supabase.from('settings').upsert({ user_id: userId, sheet_width: appData.sheetWidth, profit_margin: appData.profitMargin, design_spacing: appData.designSpacing });
       
-      alert("✅ Sincronización exitosa.");
+      alert("✅ Sincronización completa finalizada.");
       fetchCloudData(userId);
     } catch (err: any) {
-      alert("❌ Error: " + err.message);
+      alert("❌ Error de sincronización: " + err.message);
     } finally {
       setIsMigrating(false);
     }
   };
 
-  // CRUD Lógica - Pedidos
+  // CRUD Lógica - Pedidos (Reforzado)
   const saveOrder = async () => {
+    // VALIDACIÓN CRÍTICA: Prevenir FK Violations en la nube
+    if (!orderForm.client_id || !orderForm.category_id || orderForm.client_id === "" || orderForm.category_id === "") {
+      alert("⚠️ Error: Debes seleccionar un CLIENTE y una CATEGORÍA para el pedido.");
+      return;
+    }
+
     const cat = appData.categories.find(c => c.id === orderForm.category_id);
     const total = (cat?.pricePerUnit || 0) * (orderForm.quantity || 0);
     const dep = orderForm.deposit || 0;
@@ -244,19 +264,23 @@ const App: React.FC = () => {
       ? { ...editingOrder, ...orderForm, total_price: total, balance: total - dep } as Order 
       : { ...orderForm, id: generateUUID(), total_price: total, balance: total - dep, created_at: new Date().toISOString() } as Order;
 
+    // 1. Persistencia Local Inmediata
     const newOrders = editingOrder ? appData.orders.map(o => o.id === order.id ? order : o) : [...appData.orders, order];
     updateData('orders', newOrders);
     
+    // 2. Persistencia en Nube si hay sesión
     if (supabase && session?.user) {
         const { error } = await supabase.from('orders').upsert({
-          id: toSafeUUID(order.id), order_number: order.order_number, client_id: toSafeUUID(order.client_id),
+          id: toSafeUUID(order.id), 
+          order_number: order.order_number, 
+          client_id: toSafeUUID(order.client_id),
           category_id: order.category_id ? toSafeUUID(order.category_id) : null,
           width: order.width, height: order.height, quantity: order.quantity,
           total_price: order.total_price, deposit: order.deposit, balance: order.balance,
           status_id: order.status_id, details: order.details || '', user_id: session.user.id,
           created_at: ensureISO(order.created_at)
         });
-        if (error) console.error("Error al subir a Supabase:", error.message);
+        if (error) console.error("Error guardando en Supabase:", error.message);
     }
     setIsOrderModalOpen(false);
   };
@@ -270,10 +294,14 @@ const App: React.FC = () => {
 
   // CRUD Lógica - Clientes
   const saveClient = async () => {
+    if (!clientForm.name) { alert("Nombre requerido"); return; }
     const client = clientForm.id ? { ...clientForm } as Client : { ...clientForm, id: generateUUID(), created_at: new Date().toISOString() } as Client;
     updateData('clients', clientForm.id ? appData.clients.map(c => c.id === client.id ? client : c) : [...appData.clients, client]);
     if (supabase && session?.user) {
-      await supabase.from('clients').upsert({ ...client, id: toSafeUUID(client.id), user_id: session.user.id });
+      await supabase.from('clients').upsert({ 
+        id: toSafeUUID(client.id), name: client.name, phone: client.phone || "", 
+        address: client.address || "", user_id: session.user.id, created_at: ensureISO(client.created_at) 
+      });
     }
     setIsClientModalOpen(false);
   };
@@ -285,7 +313,7 @@ const App: React.FC = () => {
     }
   };
 
-  // CRUD Lógica - Descuentos y Rangos con autoguardado cloud
+  // CRUD Lógica - Configuración con persistencia híbrida
   const upsertDiscountCloud = async (d: QuantityDiscount) => {
     if (!supabase || !session?.user) return;
     await supabase.from('quantity_discounts').upsert({
@@ -331,7 +359,7 @@ const App: React.FC = () => {
     }
   };
 
-  // Cálculos de empaquetado y costos
+  // Cálculos de empaquetado y costos (Memoized)
   const packResult = useMemo(() => packDesigns(appData.designs, appData.sheetWidth, appData.designSpacing), [appData.designs, appData.sheetWidth, appData.designSpacing]);
   
   const currentPricePerCm = useMemo(() => {
@@ -421,7 +449,7 @@ const App: React.FC = () => {
                       <div className="w-16 h-16 bg-white/20 rounded-3xl flex items-center justify-center shrink-0"><CloudUploadIcon size={24}/></div>
                       <div>
                          <h3 className="text-xl font-black uppercase mb-1">Nube Conectada</h3>
-                         <p className="text-indigo-100 text-xs font-bold opacity-80 uppercase">Datos protegidos en tiempo real.</p>
+                         <p className="text-indigo-100 text-xs font-bold opacity-80 uppercase">Tus pedidos están protegidos en la nube.</p>
                       </div>
                    </div>
                    <button disabled={isMigrating} onClick={pushLocalDataToCloud} className="bg-white text-indigo-600 px-8 py-4 rounded-2xl font-black text-xs uppercase shadow-xl flex items-center gap-2">
